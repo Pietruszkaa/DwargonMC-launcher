@@ -1,0 +1,55 @@
+name: Windows Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build portable Windows launcher
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server-backend/package-lock.json
+
+      - name: Install launcher dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm ci --prefix server-backend
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build Windows portable
+        run: npm run dist:win
+
+      - name: Upload portable exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: dwargonmc-launcher-windows-portable
+          path: release/*.exe
+          if-no-files-found: error

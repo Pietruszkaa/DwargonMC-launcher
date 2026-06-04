@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+server-backend/node_modules/
+
+# Build outputs
+dist/
+dist-electron/
+release/
+
+# Local launcher runtime data
+launcher-data/
+minecraft/
+
+# Backend runtime/sync content managed outside git
+server-backend/manifest.json
+server-backend/files/*
+server-backend/backgrounds/*
+
+# Secrets and local overrides
+.env
+.env.*
+!.env.example
+*.local.json
+server-backend/access*.json
+
+# Logs and caches
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vite/
+.vitest/
+coverage/
+
+# Local editor/OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local Codex/agent metadata
+.agents/
+.codex/
