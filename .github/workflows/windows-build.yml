@@ -14,10 +14,13 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build portable Windows launcher
-    runs-on: windows-latest
+    runs-on: windows-2025
 
     steps:
       - name: Checkout

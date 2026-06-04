@@ -1,4 +1,5 @@
 import path from 'node:path';
+import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 const { mapTargetUrl, parseMapRequestHeaders, resolveInside } = require('../../server-backend/server.js') as {
@@ -9,13 +10,14 @@ const { mapTargetUrl, parseMapRequestHeaders, resolveInside } = require('../../s
 
 describe('backend resolveInside', () => {
   it('allows files inside root', () => {
-    const root = path.join('/tmp', 'files');
+    const root = path.join(os.tmpdir(), 'files');
     expect(resolveInside(root, 'mods/sodium.jar')).toBe(path.join(root, 'mods', 'sodium.jar'));
   });
 
   it('blocks path traversal', () => {
-    expect(resolveInside('/tmp/files', '../secret.txt')).toBeNull();
-    expect(resolveInside('/tmp/files', 'mods/../../secret.txt')).toBeNull();
+    const root = path.join(os.tmpdir(), 'files');
+    expect(resolveInside(root, '../secret.txt')).toBeNull();
+    expect(resolveInside(root, 'mods/../../secret.txt')).toBeNull();
   });
 });
 

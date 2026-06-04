@@ -6,45 +6,53 @@ import { ensureLauncherDirs, resolveAppDir, resolveInstallDir, type LauncherPath
 
 describe('launcher paths', () => {
   it('uses cwd while running in dev mode', () => {
+    const cwd = path.join(path.sep, 'workspace');
+
     expect(
       resolveInstallDir({
         isPackaged: false,
-        portableExecutableDir: '/portable',
-        executablePath: path.join('/app', 'DwargonMC Launcher.exe'),
-        cwd: '/workspace'
+        portableExecutableDir: path.join(path.sep, 'portable'),
+        executablePath: path.join(path.sep, 'app', 'DwargonMC Launcher.exe'),
+        cwd
       })
-    ).toBe('/workspace');
+    ).toBe(cwd);
   });
 
   it('uses portable executable directory for single-file portable builds', () => {
+    const portableExecutableDir = path.join(path.sep, 'games', 'DwargonMC');
+
     expect(
       resolveInstallDir({
         isPackaged: true,
-        portableExecutableDir: '/games/DwargonMC',
-        executablePath: path.join('/tmp', 'portable-extract', 'DwargonMC Launcher.exe'),
-        cwd: '/workspace'
+        portableExecutableDir,
+        executablePath: path.join(path.sep, 'tmp', 'portable-extract', 'DwargonMC Launcher.exe'),
+        cwd: path.join(path.sep, 'workspace')
       })
-    ).toBe('/games/DwargonMC');
+    ).toBe(portableExecutableDir);
   });
 
   it('uses executable directory for unpacked packaged builds', () => {
+    const appDir = path.join(path.sep, 'games', 'DwargonMC', 'win-unpacked');
+
     expect(
       resolveInstallDir({
         isPackaged: true,
-        executablePath: path.join('/games/DwargonMC/win-unpacked', 'DwargonMC Launcher.exe'),
-        cwd: '/workspace'
+        executablePath: path.join(appDir, 'DwargonMC Launcher.exe'),
+        cwd: path.join(path.sep, 'workspace')
       })
-    ).toBe('/games/DwargonMC/win-unpacked');
+    ).toBe(appDir);
   });
 
   it('uses executable directory as app dir for packaged builds', () => {
+    const appDir = path.join(path.sep, 'tmp', 'portable-extract');
+
     expect(
       resolveAppDir({
         isPackaged: true,
-        executablePath: path.join('/tmp', 'portable-extract', 'DwargonMC Launcher.exe'),
-        cwd: '/workspace'
+        executablePath: path.join(appDir, 'DwargonMC Launcher.exe'),
+        cwd: path.join(path.sep, 'workspace')
       })
-    ).toBe('/tmp/portable-extract');
+    ).toBe(appDir);
   });
 
   it('copies bundled backgrounds into the persistent portable asset folder', async () => {
