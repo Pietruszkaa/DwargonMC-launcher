@@ -1,0 +1,72 @@
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/launcher"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+      - "launcher"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      launcher-production:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      launcher-development:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "npm"
+    directory: "/sync-server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:15"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+      - "sync-server"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      sync-server-production:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:30"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "security"
+      - "github-actions"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      github-actions:
+        update-types:
+          - "minor"
+          - "patch"
