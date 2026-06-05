@@ -1,0 +1,62 @@
+{
+  "name": "dwargonmc-launcher",
+  "version": "1.1.2",
+  "private": true,
+  "description": "Portable Minecraft 1.21.1 NeoForge launcher for DwargonMC.",
+  "main": "dist-electron/main/main.js",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "dev:electron": "node scripts/dev-electron.cjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.electron.json && tsc --noEmit && vite build",
+    "dist:win": "npm run build && electron-builder --win dir portable"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "minecraft-launcher-core": "^3.18.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "pl.dwargonmc.launcher",
+    "productName": "DwargonMC Launcher",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "dir",
+        "portable"
+      ]
+    }
+  }
+}

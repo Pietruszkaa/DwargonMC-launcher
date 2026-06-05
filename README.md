@@ -1,56 +1,66 @@
-# DwargonMC Launcher v1
+# DwargonMC
 
-Portable Electron + React launcher dla Minecraft 1.21.1 NeoForge non-premium oraz read-only backend Fastify do manifestu, plików, mapy i health.
+Monorepo dla launchera, sync-servera i stron v2.
+
+## Struktura
+
+```text
+launcher/       Electron + React/Vite launcher
+sync-server/    Fastify read-only sync, backgrounds, health and map proxy
+download-site/  Static download page placeholder
+admin-site/     Static/light admin panel placeholder
+docs/           Plans and backlog
+```
 
 ## Launcher
 
 ```bash
-npm install
-npm run dev
+npm --prefix launcher install
+npm --prefix launcher run dev
 ```
 
 W drugim terminalu:
 
 ```bash
-npm run dev:electron
+npm --prefix launcher run dev:electron
 ```
 
 Build produkcyjny renderera i procesu Electron:
 
 ```bash
-npm run build
+npm --prefix launcher run build
 ```
 
 Windows portable:
 
 ```bash
-npm run dist:win
+npm --prefix launcher run dist:win
 ```
 
-Dane launchera są trzymane obok aplikacji:
+Dane launchera sa trzymane obok aplikacji:
 
 - `minecraft/`
 - `launcher-data/settings.json`
 - `launcher-data/profile.json`
 - `assets/backgrounds/`
 
-## Backend
+## Sync server
 
-Dodaj pliki paczki do `server-backend/files/`, np. `server-backend/files/mods/sodium.jar`, a potem wygeneruj manifest:
+Dodaj pliki paczki do `sync-server/files/`, np. `sync-server/files/mods/sodium.jar`, a potem wygeneruj manifest:
 
 ```bash
-cd server-backend
+cd sync-server
 npm install
 npm run manifest
 ```
 
-Uruchom backend:
+Uruchom sync-server:
 
 ```bash
 npm start
 ```
 
-Domyślnie słucha na `0.0.0.0:2121`. Ważne zmienne:
+Domyslnie slucha na `0.0.0.0:2121`. Wazne zmienne:
 
 - `PORT=2121`
 - `BIND_HOST=127.0.0.1`
@@ -58,26 +68,32 @@ Domyślnie słucha na `0.0.0.0:2121`. Ważne zmienne:
 - `MAP_TARGET=http://127.0.0.1:8888`
 - `MAP_ACCESS_CLIENT_ID=...` opcjonalnie, gdy `MAP_TARGET` jest za Cloudflare Access
 - `MAP_ACCESS_CLIENT_SECRET=...` opcjonalnie, gdy `MAP_TARGET` jest za Cloudflare Access
-- `MAP_REQUEST_HEADERS='{"x-map-token":"secret"}'` opcjonalne dodatkowe nagłówki do upstreamu mapy
+- `MAP_REQUEST_HEADERS='{"x-map-token":"secret"}'` opcjonalne dodatkowe naglowki do upstreamu mapy
 - `MC_HOST=127.0.0.1`
 - `MC_PORT=25565`
 
-Jeśli błąd Cloudflare Access pojawia się bezpośrednio na publicznym URL `dwargonmc-sync.petershub.xyz/map/`, to request nie dociera do backendu i trzeba wyłączyć Access/bypass dla publicznej ścieżki lub domeny. Nagłówki `MAP_ACCESS_*` pomagają tylko wtedy, gdy to backend odpytuje chroniony `MAP_TARGET`.
+Jesli blad Cloudflare Access pojawia sie bezposrednio na publicznym URL `dwargonmc-sync.petershub.xyz/map/`, request nie dociera do sync-servera i trzeba wylaczyc Access/bypass dla publicznej sciezki lub domeny. Naglowki `MAP_ACCESS_*` pomagaja tylko wtedy, gdy to sync-server odpytuje chroniony `MAP_TARGET`.
 
-Przykład unit service jest w `server-backend/systemd/dwargonmc-backend.service`.
+Przyklad unit service jest w `sync-server/systemd/dwargonmc-sync-server.service`.
 
-Backend jest samodzielnym programem. Na serwer można przenieść sam folder `server-backend/`, uruchomić w nim `npm install`, wrzucić pliki do `files/`, tła do `backgrounds/`, wygenerować manifest i odpalić `npm start`.
+Sync-server jest samodzielnym programem. Na serwer mozna przeniesc sam folder `sync-server/`, uruchomic w nim `npm install`, wrzucic pliki do `files/`, tla do `backgrounds/`, wygenerowac manifest i odpalic `npm start`.
 
-## Sync
+## Sync rules
 
-Backend trzyma pliki bez prefixu. Launcher zapisuje lokalnie tylko zarządzane pliki z `_`, np. `mods/sodium.jar` z manifestu staje się `minecraft/mods/_sodium.jar`. Pliki gracza bez `_` nie są ruszane.
+Sync-server trzyma pliki bez prefixu. Launcher zapisuje lokalnie tylko zarzadzane pliki z `_`, np. `mods/sodium.jar` z manifestu staje sie `minecraft/mods/_sodium.jar`. Pliki gracza bez `_` nie sa ruszane.
 
-Jeśli backend nie odpowiada, launcher pokazuje ostrzeżenie, że pliki nie zostały zweryfikowane, ale nie blokuje startu gry.
+Jesli sync-server nie odpowiada, launcher pokazuje ostrzezenie, ze pliki nie zostaly zweryfikowane, ale nie blokuje startu gry.
 
-## Weryfikacja
+## Verification
 
 ```bash
-npm run typecheck
-npm test
-npm run build
+npm --prefix launcher run typecheck
+npm --prefix launcher test
+npm --prefix launcher run build
 ```
+
+## Docs
+
+- `docs/Plan-v1.md`
+- `docs/release.md`
+- `docs/v2-features.md`

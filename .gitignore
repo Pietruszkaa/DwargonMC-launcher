@@ -1,27 +1,35 @@
 # Dependencies
 node_modules/
-server-backend/node_modules/
+launcher/node_modules/
+sync-server/node_modules/
 
 # Build outputs
+launcher/dist/
+launcher/dist-electron/
+launcher/release/
+download-site/dist/
+admin-site/dist/
 dist/
 dist-electron/
 release/
 
 # Local launcher runtime data
+launcher/launcher-data/
+launcher/minecraft/
 launcher-data/
 minecraft/
 
 # Backend runtime/sync content managed outside git
-server-backend/manifest.json
-server-backend/files/*
-server-backend/backgrounds/*
+sync-server/manifest.json
+sync-server/files/*
+sync-server/backgrounds/*
 
 # Secrets and local overrides
 .env
 .env.*
 !.env.example
 *.local.json
-server-backend/access*.json
+sync-server/access*.json
 
 # Logs and caches
 *.log

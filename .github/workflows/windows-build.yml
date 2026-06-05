@@ -32,27 +32,30 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
-            package-lock.json
-            server-backend/package-lock.json
+            launcher/package-lock.json
+            sync-server/package-lock.json
 
       - name: Install launcher dependencies
-        run: npm ci
+        run: npm ci --prefix launcher
 
-      - name: Install backend dependencies
-        run: npm ci --prefix server-backend
+      - name: Install sync-server dependencies
+        run: npm ci --prefix sync-server
 
       - name: Typecheck
         run: npm run typecheck
+        working-directory: launcher
 
       - name: Test
         run: npm test
+        working-directory: launcher
 
       - name: Build Windows portable
         run: npm run dist:win
+        working-directory: launcher
 
       - name: Upload portable exe
         uses: actions/upload-artifact@v4
         with:
           name: dwargonmc-launcher-windows-portable
-          path: release/*.exe
+          path: launcher/release/*.exe
           if-no-files-found: error
