@@ -34,7 +34,7 @@ git push origin main --tags
 
 ## Notes
 
-- Auto-update v2 ma czytac GitHub Releases jako zrodlo nowych wersji.
+- Auto-update v2 czyta GitHub Releases z `Pietruszkaa/DwargonMC-launcher`.
+- Launcher szuka assetu `.exe`; `SHA256SUMS.txt` jest pokazywany jako dodatkowy plik release.
 - Release nie powinien zawierac `minecraft/`, `launcher-data/`, `release/` z lokalnego komputera ani paczek sync-servera.
 - Unsigned build moze byc blokowany przez Microsoft Smart App Control/SmartScreen. Do czasu podpisywania kodu strona pobierania powinna pokazac instrukcje `Wlasciwosci -> Odblokuj`.
-

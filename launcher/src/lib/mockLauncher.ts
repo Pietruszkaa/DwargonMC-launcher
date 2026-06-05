@@ -68,6 +68,18 @@ let state: LauncherState = {
     '/assets/backgrounds/3.png',
     '/assets/backgrounds/4.png'
   ],
+  update: {
+    checking: false,
+    available: false,
+    currentVersion: '1.1.2',
+    latestVersion: null,
+    releaseName: null,
+    releaseUrl: null,
+    downloadUrl: null,
+    sha256Url: null,
+    notes: '',
+    error: null
+  },
   system: {
     totalRamMb: 16384,
     maxRamMb: 12288,
@@ -126,6 +138,12 @@ export function getLauncherApi(): LauncherApi {
       state = { ...state, sync };
       emitState();
       return sync;
+    },
+    async checkUpdate() {
+      return state.update;
+    },
+    async openUpdateDownload() {
+      return undefined;
     },
     async reinstallCore() {
       const line = 'Mock: core cache wyczyszczony.';

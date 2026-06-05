@@ -18,6 +18,7 @@ import {
   type LauncherProfile,
   type LauncherSettings
 } from './storage';
+import { checkForLauncherUpdate, idleUpdateStatus, type UpdateStatus } from './updater';
 
 type ServerHealth = {
   ok: boolean;
@@ -38,6 +39,7 @@ type LauncherState = {
   logs: string[];
   managedFiles: ManagedFile[];
   backgrounds: string[];
+  update: UpdateStatus;
   system: {
     totalRamMb: number;
     maxRamMb: number;
@@ -98,6 +100,7 @@ async function createWindow(): Promise<void> {
     logs: [],
     managedFiles: await listManagedLocalFiles(paths.minecraftDir),
     backgrounds: await listBackgroundUrls(paths),
+    update: idleUpdateStatus(app.getVersion()),
     system: {
       ...ram,
       java: await checkJava(settings.javaPath)
@@ -134,6 +137,7 @@ async function createWindow(): Promise<void> {
 
   registerIpc();
   startHealthPolling();
+  void refreshUpdateStatus();
   void performStartupSync();
 }
 
@@ -170,6 +174,13 @@ function registerIpc(): void {
   });
 
   ipcMain.handle('launcher:run-sync', () => performStartupSync());
+
+  ipcMain.handle('launcher:check-update', () => refreshUpdateStatus());
+
+  ipcMain.handle('launcher:open-update-download', async () => {
+    const target = state.update.downloadUrl ?? state.update.releaseUrl;
+    if (target) await shell.openExternal(target);
+  });
 
   ipcMain.handle('launcher:reinstall-core', async (): Promise<ReinstallCoreResult> => {
     if (state.launch.running) {
@@ -307,6 +318,19 @@ async function refreshHealth(): Promise<void> {
   } finally {
     healthPollInFlight = false;
   }
+}
+
+async function refreshUpdateStatus(): Promise<UpdateStatus> {
+  state.update = {
+    ...state.update,
+    checking: true,
+    error: null
+  };
+  emitState();
+
+  state.update = await checkForLauncherUpdate(app.getVersion());
+  emitState();
+  return state.update;
 }
 
 function appendLog(line: string): void {

@@ -69,12 +69,26 @@ export type LauncherState = {
   logs: string[];
   managedFiles: ManagedFile[];
   backgrounds: string[];
+  update: UpdateStatus;
   system: {
     totalRamMb: number;
     maxRamMb: number;
     defaultRamMb: number;
     java: JavaCheckResult;
   };
+};
+
+export type UpdateStatus = {
+  checking: boolean;
+  available: boolean;
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseName: string | null;
+  releaseUrl: string | null;
+  downloadUrl: string | null;
+  sha256Url: string | null;
+  notes: string;
+  error: string | null;
 };
 
 export type SetupState = {
@@ -115,6 +129,8 @@ export type LauncherApi = {
   saveProfile(profile: LauncherProfile): Promise<LauncherProfile>;
   completeSetup(): Promise<LauncherProfile>;
   runSync(): Promise<SyncStatus>;
+  checkUpdate(): Promise<UpdateStatus>;
+  openUpdateDownload(): Promise<void>;
   reinstallCore(): Promise<ReinstallCoreResult>;
   launchGame(request: LaunchRequest): Promise<LaunchStatus>;
   listManagedFiles(): Promise<ManagedFile[]>;

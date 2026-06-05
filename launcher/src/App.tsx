@@ -16,6 +16,7 @@ export function App(): JSX.Element {
   const [logsExpanded, setLogsExpanded] = useState(false);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const [backgroundIndex, setBackgroundIndex] = useState(0);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
 
   useEffect(() => {
     void api.getState().then((next) => {
@@ -185,6 +186,9 @@ export function App(): JSX.Element {
       {popup === 'files' && <FilesModal state={state} onClose={() => setPopup(null)} />}
       {popup === 'map' && <MapModal backendUrl={state.settings.backendUrl} onClose={() => setPopup(null)} />}
       {popup === 'logs' && <LogsModal logs={state.logs} onClose={() => setPopup(null)} />}
+      {state.update.available && !updateDismissed && (
+        <UpdateModal state={state} onClose={() => setUpdateDismissed(true)} />
+      )}
       {crash && <CrashModal crash={crash} onClose={() => setCrash(null)} />}
     </main>
   );
@@ -462,6 +466,38 @@ function LogsModal({ logs, onClose }: { logs: string[]; onClose: () => void }): 
         </label>
       </div>
       <pre className="logs-view" ref={logRef}>{logs.length ? logs.join('\n') : 'Brak logów JVM.'}</pre>
+    </Modal>
+  );
+}
+
+function UpdateModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {
+  const notes = state.update.notes.trim();
+
+  const handleDownload = async (): Promise<void> => {
+    await api.openUpdateDownload();
+    onClose();
+  };
+
+  return (
+    <Modal title="Dostępna aktualizacja" onClose={onClose}>
+      <div className="update-panel">
+        <p>
+          Aktualna wersja: <strong>{state.update.currentVersion}</strong>
+        </p>
+        <p>
+          Nowa wersja: <strong>{state.update.latestVersion}</strong>
+        </p>
+        {notes && <pre>{notes.slice(0, 900)}</pre>}
+        {state.update.sha256Url && <small>SHA256 jest dostępne w plikach release.</small>}
+      </div>
+      <footer className="modal-actions">
+        <button className="secondary-button" type="button" onClick={onClose}>
+          Nie teraz
+        </button>
+        <button className="play-button compact" type="button" onClick={handleDownload}>
+          Zaktualizuj
+        </button>
+      </footer>
     </Modal>
   );
 }

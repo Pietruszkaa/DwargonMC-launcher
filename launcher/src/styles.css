@@ -850,6 +850,35 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.update-panel {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+}
+
+.update-panel p {
+  margin: 0;
+}
+
+.update-panel strong {
+  color: var(--primary);
+}
+
+.update-panel pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.38);
+  color: #cfd8d1;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.update-panel small {
+  color: var(--muted);
+}
+
 .play-button.compact {
   min-width: 140px;
 }
