@@ -8,7 +8,6 @@ Release pipeline jest oparty o GitHub Releases.
    - `launcher/package.json`
    - `launcher/package-lock.json`
    - root `package.json`
-   - UI, jesli wersja jest wyswietlana recznie
 
 2. Lokalna weryfikacja:
 
@@ -28,9 +27,23 @@ git push origin main --tags
 4. GitHub Actions `Release`:
    - instaluje zaleznosci `launcher/` i `sync-server/`;
    - uruchamia typecheck i testy;
+   - ustawia wersje `launcher/package.json` z taga `vX.Y.Z` przed buildem;
    - buduje Windows portable `.exe`;
    - generuje `SHA256SUMS.txt`;
+   - jesli ustawiono sekret `VIRUSTOTAL_API_KEY`, wysyla `.exe` do VirusTotal i dopisuje raport do opisu release;
    - publikuje pliki w GitHub Release.
+
+## VirusTotal
+
+Skan VirusTotal jest opcjonalny i dziala tylko w workflow `Release`.
+
+Wymagany sekret repo:
+
+```text
+VIRUSTOTAL_API_KEY
+```
+
+Jesli sekret nie istnieje, workflow pomija skan i publikuje release bez linku VirusTotal. Jesli sekret istnieje, ale upload albo API zwroci blad, release zatrzyma sie przed publikacja assetow.
 
 ## Notes
 

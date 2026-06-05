@@ -1,12 +1,11 @@
 # DwargonMC download site
 
-Static download page for the launcher.
+Statyczna strona pobierania launchera.
 
-Planned v2 scope:
+Planowany zakres v2:
 
-- host latest Windows `.exe`;
-- show SHA256 for the latest build;
-- link to GitHub Releases;
-- show short install/unblock instructions;
-- link to map, status and Discord if needed.
-
+- najnowszy Windows `.exe`;
+- SHA256 najnowszego buildu;
+- link do GitHub Releases;
+- krotka instrukcja instalacji i odblokowania pliku w Windows;
+- link do mapy, statusu i Discorda, jesli beda potrzebne.

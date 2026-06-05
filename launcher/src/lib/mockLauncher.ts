@@ -20,6 +20,8 @@ const settings: LauncherSettings = {
 
 const profile: LauncherProfile = {
   nickname: 'Player',
+  accountMode: 'offline',
+  microsoft: null,
   lastPlayedAt: null,
   lastSessionSeconds: 0,
   totalPlaySeconds: 0,
@@ -68,6 +70,21 @@ let state: LauncherState = {
     '/assets/backgrounds/3.png',
     '/assets/backgrounds/4.png'
   ],
+  announcements: {
+    items: [
+      {
+        id: 'mock-welcome',
+        title: 'Komunikat serwera',
+        body: 'Tutaj pojawia sie informacja od admina z sync-server.',
+        level: 'info',
+        date: new Date().toISOString(),
+        link: null,
+        expiresAt: null
+      }
+    ],
+    cached: false,
+    error: null
+  },
   update: {
     checking: false,
     available: false,
@@ -127,6 +144,37 @@ export function getLauncherApi(): LauncherApi {
       emitState();
       return state.profile;
     },
+    async loginMicrosoft() {
+      state = {
+        ...state,
+        profile: {
+          ...state.profile,
+          nickname: 'PremiumPlayer',
+          accountMode: 'microsoft',
+          microsoft: {
+            name: 'PremiumPlayer',
+            uuid: '00000000000000000000000000000000',
+            refreshToken: 'mock-refresh',
+            xuid: null,
+            expiresAt: Date.now() + 3600_000
+          }
+        }
+      };
+      emitState();
+      return state.profile;
+    },
+    async logoutMicrosoft() {
+      state = {
+        ...state,
+        profile: {
+          ...state.profile,
+          accountMode: 'offline',
+          microsoft: null
+        }
+      };
+      emitState();
+      return state.profile;
+    },
     async runSync() {
       const sync: SyncStatus = {
         phase: 'warning',
@@ -138,6 +186,9 @@ export function getLauncherApi(): LauncherApi {
       state = { ...state, sync };
       emitState();
       return sync;
+    },
+    async refreshAnnouncements() {
+      return state.announcements;
     },
     async checkUpdate() {
       return state.update;

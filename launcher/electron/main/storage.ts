@@ -17,6 +17,14 @@ export type LauncherSettings = {
 
 export type LauncherProfile = {
   nickname: string;
+  accountMode: 'offline' | 'microsoft';
+  microsoft: {
+    name: string;
+    uuid: string;
+    refreshToken: string;
+    xuid: string | null;
+    expiresAt: number | null;
+  } | null;
   lastPlayedAt: string | null;
   lastSessionSeconds: number;
   totalPlaySeconds: number;
@@ -41,6 +49,8 @@ export function defaultSettings(): LauncherSettings {
 export function defaultProfile(): LauncherProfile {
   return {
     nickname: '',
+    accountMode: 'offline',
+    microsoft: null,
     lastPlayedAt: null,
     lastSessionSeconds: 0,
     totalPlaySeconds: 0,
@@ -90,8 +100,12 @@ export async function readProfile(paths: LauncherPaths): Promise<LauncherProfile
     const raw = await fs.readFile(paths.profileFile, 'utf8');
     const profile = JSON.parse(raw) as Partial<LauncherProfile>;
 
+    const microsoft = normalizeMicrosoftProfile(profile.microsoft);
+
     return {
       nickname: profile.nickname ?? '',
+      accountMode: profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline',
+      microsoft: profile.accountMode === 'microsoft' ? microsoft : null,
       lastPlayedAt: profile.lastPlayedAt ?? null,
       lastSessionSeconds: Math.max(0, Number(profile.lastSessionSeconds) || 0),
       totalPlaySeconds: Math.max(0, Number(profile.totalPlaySeconds) || 0),
@@ -104,14 +118,31 @@ export async function readProfile(paths: LauncherPaths): Promise<LauncherProfile
 }
 
 export async function saveProfile(paths: LauncherPaths, profile: LauncherProfile): Promise<LauncherProfile> {
+  const microsoft = normalizeMicrosoftProfile(profile.microsoft);
+  const accountMode = profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline';
+
   return writeJson(paths.profileFile, {
     nickname: profile.nickname.trim(),
+    accountMode,
+    microsoft: accountMode === 'microsoft' ? microsoft : null,
     lastPlayedAt: profile.lastPlayedAt ?? null,
     lastSessionSeconds: Math.max(0, Math.round(Number(profile.lastSessionSeconds) || 0)),
     totalPlaySeconds: Math.max(0, Math.round(Number(profile.totalPlaySeconds) || 0)),
     launchCount: Math.max(0, Math.round(Number(profile.launchCount) || 0)),
     setupComplete: profile.setupComplete
   });
+}
+
+function normalizeMicrosoftProfile(profile: LauncherProfile['microsoft'] | undefined): LauncherProfile['microsoft'] {
+  if (!profile?.name || !profile.uuid || !profile.refreshToken) return null;
+
+  return {
+    name: String(profile.name),
+    uuid: String(profile.uuid),
+    refreshToken: String(profile.refreshToken),
+    xuid: profile.xuid ? String(profile.xuid) : null,
+    expiresAt: typeof profile.expiresAt === 'number' ? profile.expiresAt : null
+  };
 }
 
 export function normalizeBackendUrl(url: string): string {

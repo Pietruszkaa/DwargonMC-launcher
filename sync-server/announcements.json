@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "welcome",
+      "title": "DwargonMC",
+      "body": "Launcher v2 jest przygotowywany. Sync, mapa i start gry dzialaja jak w v1.",
+      "level": "info",
+      "date": "2026-06-05T00:00:00.000Z",
+      "link": null,
+      "expiresAt": null
+    }
+  ]
+}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { Modal } from '~components/Modal';
 import { getLauncherApi } from '@/lib/mockLauncher';
 import { t } from '@/lib/i18n';
-import type { CrashInfo, LauncherSettings, LauncherState } from '@/types/launcher';
+import type { Announcement, CrashInfo, LauncherSettings, LauncherState } from '@/types/launcher';
 
 type Popup = 'settings' | 'files' | 'map' | 'logs' | null;
 
@@ -98,8 +98,13 @@ export function App(): JSX.Element {
           </span>
           <span className="status-divider">|</span>
           <label className="top-nick">
-            <span>Nick:</span>
-            <input value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder="Wpisz nick..." />
+            <span>{state.profile.accountMode === 'microsoft' ? 'Microsoft:' : 'Nick:'}</span>
+            <input
+              value={nickname}
+              onChange={(event) => setNickname(event.target.value)}
+              placeholder="Wpisz nick..."
+              disabled={state.profile.accountMode === 'microsoft'}
+            />
           </label>
           <button className="top-sync" type="button" onClick={handleSync}>
             Sync
@@ -112,7 +117,7 @@ export function App(): JSX.Element {
           </div>
         </div>
         <div className="top-bar-right">
-          <span className="version-right">v1.1.2</span>
+          <span className="version-right">v{state.update.currentVersion}</span>
           <div className="window-controls" aria-label="Window controls">
             <button className="win-btn" type="button" onClick={() => handleWindowAction('minimize')} aria-label="Minimalizuj">−</button>
             <button className="win-btn" type="button" onClick={() => handleWindowAction('maximize')} aria-label="Maksymalizuj">□</button>
@@ -162,6 +167,8 @@ export function App(): JSX.Element {
             </div>
           </aside>
 
+          <AnnouncementsPanel items={state.announcements.items} cached={state.announcements.cached} error={state.announcements.error} />
+
           {state.settings.showLogs && (
             <section className={`inline-logs ${logsExpanded ? 'inline-logs-expanded' : ''}`}>
               <header>
@@ -191,6 +198,44 @@ export function App(): JSX.Element {
       )}
       {crash && <CrashModal crash={crash} onClose={() => setCrash(null)} />}
     </main>
+  );
+}
+
+function AnnouncementsPanel({
+  items,
+  cached,
+  error
+}: {
+  items: Announcement[];
+  cached: boolean;
+  error: string | null;
+}): JSX.Element | null {
+  if (!items.length && !error) return null;
+
+  return (
+    <section className="announcements-panel">
+      <header>
+        <h2>Komunikaty</h2>
+        {cached && <span>cache</span>}
+      </header>
+      {items.length ? (
+        <div className="announcements-list">
+          {items.slice(0, 3).map((item) => (
+            <article className={`announcement announcement-${item.level}`} key={item.id}>
+              <strong>{item.title}</strong>
+              <p>{item.body}</p>
+              {item.link && (
+                <button type="button" onClick={() => window.open(item.link!, '_blank', 'noopener,noreferrer')}>
+                  Otwórz
+                </button>
+              )}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">{error}</p>
+      )}
+    </section>
   );
 }
 
@@ -330,6 +375,8 @@ function formatDuration(totalSeconds: number): string {
 function SettingsModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {
   const [draft, setDraft] = useState<LauncherSettings>(state.settings);
   const [coreMessage, setCoreMessage] = useState('');
+  const [accountMessage, setAccountMessage] = useState('');
+  const [accountBusy, setAccountBusy] = useState(false);
   const copy = t(draft.language);
 
   const update = <K extends keyof LauncherSettings>(key: K, value: LauncherSettings[K]): void => {
@@ -351,9 +398,52 @@ function SettingsModal({ state, onClose }: { state: LauncherState; onClose: () =
     setCoreMessage(result.message);
   };
 
+  const handleMicrosoftLogin = async (): Promise<void> => {
+    setAccountBusy(true);
+    setAccountMessage('Otwieranie logowania Microsoft...');
+    try {
+      const profile = await api.loginMicrosoft();
+      setAccountMessage(`Zalogowano jako ${profile.microsoft?.name ?? profile.nickname}.`);
+    } catch (error) {
+      setAccountMessage(error instanceof Error ? error.message : 'Nie udało się zalogować konta Microsoft.');
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
+  const handleMicrosoftLogout = async (): Promise<void> => {
+    setAccountBusy(true);
+    try {
+      await api.logoutMicrosoft();
+      setAccountMessage('Wylogowano konto Microsoft. Launcher użyje trybu non-premium.');
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
   return (
     <Modal title={copy.settings} onClose={onClose}>
       <div className="settings-grid">
+        <section className="account-box" aria-label="Account mode">
+          <div>
+            <strong>Konto</strong>
+            <p>
+              {state.profile.accountMode === 'microsoft' && state.profile.microsoft
+                ? `Microsoft: ${state.profile.microsoft.name}`
+                : 'Tryb non-premium / offline'}
+            </p>
+          </div>
+          {state.profile.accountMode === 'microsoft' ? (
+            <button type="button" onClick={handleMicrosoftLogout} disabled={accountBusy}>
+              Wyloguj Microsoft
+            </button>
+          ) : (
+            <button type="button" onClick={handleMicrosoftLogin} disabled={accountBusy}>
+              Zaloguj Microsoft
+            </button>
+          )}
+          {accountMessage && <small>{accountMessage}</small>}
+        </section>
         <label className="field">
           <span>{copy.backend}</span>
           <input value={draft.backendUrl} onChange={(event) => update('backendUrl', event.target.value)} />

@@ -1,11 +1,13 @@
 import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, net, protocol, shell } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { getAnnouncements, type AnnouncementsStatus } from './announcements';
 import { BACKGROUND_PROTOCOL, listBackgroundUrls, resolveBackgroundRequest } from './backgrounds';
 import { CRASH_LOG_LINES, MAX_LOG_LINES } from './constants';
 import { reinstallCore, type ReinstallCoreResult } from './core';
 import { checkJava } from './java';
 import { launchGame, type LaunchStatus } from './game';
+import { loginMicrosoft, refreshMicrosoft, type MclcAuthorization } from './microsoftAuth';
 import { ensureLauncherDirs, getLauncherPaths, type LauncherPaths } from './paths';
 import { getRamInfo } from './ram';
 import { resolveSetupPaths, type SetupState } from './setup';
@@ -18,6 +20,7 @@ import {
   type LauncherProfile,
   type LauncherSettings
 } from './storage';
+import { offlineUuid } from './validation';
 import { checkForLauncherUpdate, idleUpdateStatus, type UpdateStatus } from './updater';
 
 type ServerHealth = {
@@ -39,6 +42,7 @@ type LauncherState = {
   logs: string[];
   managedFiles: ManagedFile[];
   backgrounds: string[];
+  announcements: AnnouncementsStatus;
   update: UpdateStatus;
   system: {
     totalRamMb: number;
@@ -100,6 +104,7 @@ async function createWindow(): Promise<void> {
     logs: [],
     managedFiles: await listManagedLocalFiles(paths.minecraftDir),
     backgrounds: await listBackgroundUrls(paths),
+    announcements: await getAnnouncements(paths, settings.backendUrl),
     update: idleUpdateStatus(app.getVersion()),
     system: {
       ...ram,
@@ -148,6 +153,7 @@ function registerIpc(): void {
     state.settings = await saveSettings(paths, settings);
     state.system.java = await checkJava(state.settings.javaPath);
     await refreshHealth();
+    await refreshAnnouncements();
     return state.settings;
   });
 
@@ -173,9 +179,33 @@ function registerIpc(): void {
     return state.profile;
   });
 
+  ipcMain.handle('launcher:login-microsoft', async () => {
+    const result = await loginMicrosoft({ onLog: appendLog });
+    state.profile = await saveProfile(paths, {
+      ...state.profile,
+      nickname: result.profile.name,
+      accountMode: 'microsoft',
+      microsoft: result.profile
+    });
+    emitState();
+    return state.profile;
+  });
+
+  ipcMain.handle('launcher:logout-microsoft', async () => {
+    state.profile = await saveProfile(paths, {
+      ...state.profile,
+      accountMode: 'offline',
+      microsoft: null
+    });
+    emitState();
+    return state.profile;
+  });
+
   ipcMain.handle('launcher:run-sync', () => performStartupSync());
 
   ipcMain.handle('launcher:check-update', () => refreshUpdateStatus());
+
+  ipcMain.handle('launcher:refresh-announcements', () => refreshAnnouncements());
 
   ipcMain.handle('launcher:open-update-download', async () => {
     const target = state.update.downloadUrl ?? state.update.releaseUrl;
@@ -197,9 +227,23 @@ function registerIpc(): void {
   });
 
   ipcMain.handle('launcher:launch-game', async (_event, request: { nickname: string }) => {
+    let authorization: MclcAuthorization;
+    try {
+      authorization = await resolveAuthorization(request.nickname);
+    } catch (error) {
+      state.launch = {
+        running: false,
+        phase: 'error',
+        message: error instanceof Error ? error.message : 'Nie udało się przygotować konta Microsoft.'
+      };
+      emitState();
+      return state.launch;
+    }
+    const launchNickname = authorization.name ?? request.nickname;
+
     state.profile = await saveProfile(paths, {
       ...state.profile,
-      nickname: request.nickname,
+      nickname: launchNickname,
       setupComplete: state.profile.setupComplete
     });
     state.system.java = await checkJava(state.settings.javaPath);
@@ -210,7 +254,7 @@ function registerIpc(): void {
       return state.launch;
     }
 
-    state.launch = await launchGame(paths, state.settings, request.nickname, {
+    state.launch = await launchGame(paths, state.settings, launchNickname, authorization, {
       onStatus: (launch) => {
         state.launch = launch;
         if (launch.phase === 'closed') {
@@ -320,6 +364,12 @@ async function refreshHealth(): Promise<void> {
   }
 }
 
+async function refreshAnnouncements(): Promise<AnnouncementsStatus> {
+  state.announcements = await getAnnouncements(paths, state.settings.backendUrl);
+  emitState();
+  return state.announcements;
+}
+
 async function refreshUpdateStatus(): Promise<UpdateStatus> {
   state.update = {
     ...state.update,
@@ -340,6 +390,36 @@ function appendLog(line: string): void {
   state.logs = [...state.logs, text].slice(-MAX_LOG_LINES);
   mainWindow?.webContents.send('launcher:log', text);
   emitState();
+}
+
+async function resolveAuthorization(nickname: string): Promise<MclcAuthorization> {
+  if (state.profile.accountMode === 'microsoft') {
+    if (!state.profile.microsoft?.refreshToken) {
+      throw new Error('Zaloguj konto Microsoft ponownie.');
+    }
+
+    const result = await refreshMicrosoft(state.profile.microsoft.refreshToken, { onLog: appendLog });
+    state.profile = await saveProfile(paths, {
+      ...state.profile,
+      nickname: result.profile.name,
+      microsoft: result.profile,
+      accountMode: 'microsoft'
+    });
+    emitState();
+    return result.authorization;
+  }
+
+  const uuid = offlineUuid(nickname);
+  return {
+    access_token: '0',
+    client_token: uuid,
+    uuid,
+    name: nickname,
+    user_properties: '{}',
+    meta: {
+      type: 'msa'
+    }
+  };
 }
 
 async function completePlaySession(): Promise<void> {

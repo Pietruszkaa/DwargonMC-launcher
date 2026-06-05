@@ -27,11 +27,21 @@ export type LauncherSettings = {
 
 export type LauncherProfile = {
   nickname: string;
+  accountMode: 'offline' | 'microsoft';
+  microsoft: MicrosoftProfile | null;
   lastPlayedAt: string | null;
   lastSessionSeconds: number;
   totalPlaySeconds: number;
   launchCount: number;
   setupComplete: boolean;
+};
+
+export type MicrosoftProfile = {
+  name: string;
+  uuid: string;
+  refreshToken: string;
+  xuid: string | null;
+  expiresAt: number | null;
 };
 
 export type ServerHealth = {
@@ -41,6 +51,24 @@ export type ServerHealth = {
   playersMax: number | null;
   players: string[];
   message: string;
+};
+
+export type AnnouncementLevel = 'info' | 'warning' | 'maintenance' | 'update';
+
+export type Announcement = {
+  id: string;
+  title: string;
+  body: string;
+  level: AnnouncementLevel;
+  date: string;
+  link: string | null;
+  expiresAt: string | null;
+};
+
+export type AnnouncementsStatus = {
+  items: Announcement[];
+  cached: boolean;
+  error: string | null;
 };
 
 export type SyncStatus = {
@@ -69,6 +97,7 @@ export type LauncherState = {
   logs: string[];
   managedFiles: ManagedFile[];
   backgrounds: string[];
+  announcements: AnnouncementsStatus;
   update: UpdateStatus;
   system: {
     totalRamMb: number;
@@ -128,7 +157,10 @@ export type LauncherApi = {
   saveSettings(settings: LauncherSettings): Promise<LauncherSettings>;
   saveProfile(profile: LauncherProfile): Promise<LauncherProfile>;
   completeSetup(): Promise<LauncherProfile>;
+  loginMicrosoft(): Promise<LauncherProfile>;
+  logoutMicrosoft(): Promise<LauncherProfile>;
   runSync(): Promise<SyncStatus>;
+  refreshAnnouncements(): Promise<AnnouncementsStatus>;
   checkUpdate(): Promise<UpdateStatus>;
   openUpdateDownload(): Promise<void>;
   reinstallCore(): Promise<ReinstallCoreResult>;

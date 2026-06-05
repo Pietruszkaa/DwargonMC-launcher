@@ -13,6 +13,8 @@ describe('launcher profile storage', () => {
 
     await expect(readProfile(paths)).resolves.toEqual({
       nickname: 'Player',
+      accountMode: 'offline',
+      microsoft: null,
       lastPlayedAt: null,
       lastSessionSeconds: 0,
       totalPlaySeconds: 0,
@@ -27,6 +29,8 @@ describe('launcher profile storage', () => {
 
     const saved = await saveProfile(paths, {
       nickname: ' Player ',
+      accountMode: 'offline',
+      microsoft: null,
       lastPlayedAt: '2026-06-05T00:00:00.000Z',
       lastSessionSeconds: 12.6,
       totalPlaySeconds: 40.2,
@@ -36,12 +40,39 @@ describe('launcher profile storage', () => {
 
     expect(saved).toEqual({
       nickname: 'Player',
+      accountMode: 'offline',
+      microsoft: null,
       lastPlayedAt: '2026-06-05T00:00:00.000Z',
       lastSessionSeconds: 13,
       totalPlaySeconds: 40,
       launchCount: 2,
       setupComplete: true
     });
+  });
+
+  it('drops microsoft token data when profile is saved in offline mode', async () => {
+    const paths = await tempPaths();
+    await fs.mkdir(paths.launcherDataDir, { recursive: true });
+
+    const saved = await saveProfile(paths, {
+      nickname: 'Player',
+      accountMode: 'offline',
+      microsoft: {
+        name: 'PremiumPlayer',
+        uuid: 'uuid',
+        refreshToken: 'refresh-token',
+        xuid: 'xuid',
+        expiresAt: 123
+      },
+      lastPlayedAt: null,
+      lastSessionSeconds: 0,
+      totalPlaySeconds: 0,
+      launchCount: 0,
+      setupComplete: true
+    });
+
+    expect(saved.accountMode).toBe('offline');
+    expect(saved.microsoft).toBeNull();
   });
 });
 

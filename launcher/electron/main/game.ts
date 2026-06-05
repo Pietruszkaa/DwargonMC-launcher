@@ -3,9 +3,10 @@ import fs from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { MIN_NEOFORGE_VERSION, SERVER_HOST, SERVER_PORT, MC_VERSION } from './constants';
+import type { MclcAuthorization } from './microsoftAuth';
 import type { LauncherPaths } from './paths';
 import type { LauncherSettings } from './storage';
-import { offlineUuid, validateNickname } from './validation';
+import { validateNickname } from './validation';
 
 const { Client } = require('minecraft-launcher-core') as {
   Client: new () => EventEmitter & { launch(options: Record<string, unknown>): Promise<void> };
@@ -28,6 +29,7 @@ export async function launchGame(
   paths: LauncherPaths,
   settings: LauncherSettings,
   nickname: string,
+  authorization: MclcAuthorization,
   events: GameEvents
 ): Promise<LaunchStatus> {
   const validationError = validateNickname(nickname);
@@ -45,7 +47,6 @@ export async function launchGame(
   await purgeStaleForgeMetadata(paths.minecraftDir, neoforge.version, events);
 
   const launcher = new Client();
-  const uuid = offlineUuid(nickname);
   const javaPath = settings.javaPath.trim() || undefined;
 
   launcher.on('debug', (line) => events.onLog(String(line)));
@@ -66,16 +67,7 @@ export async function launchGame(
   });
 
   const options: Record<string, unknown> = {
-    authorization: {
-      access_token: '0',
-      client_token: uuid,
-      uuid,
-      name: nickname,
-      user_properties: '{}',
-      meta: {
-        type: 'msa'
-      }
-    },
+    authorization,
     root: paths.minecraftDir,
     version: {
       number: MC_VERSION,

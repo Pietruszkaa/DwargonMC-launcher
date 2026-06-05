@@ -1,11 +1,10 @@
 # DwargonMC admin site
 
-Static/light admin UI placeholder for sync-server content management.
+Lekki panel administracyjny dla contentu sync-servera.
 
-Planned v2 scope:
+Planowany zakres v2:
 
-- edit announcements JSON;
-- preview current manifest/backgrounds/status;
-- keep write operations protected;
-- avoid a database in v2.
-
+- edycja `announcements.json`;
+- podglad manifestu, tla, statusu i proxy mapy;
+- zabezpieczenie operacji zapisu;
+- brak bazy danych w v2.

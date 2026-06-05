@@ -13,6 +13,7 @@ const rootDir = process.argv[2] ? path.resolve(process.argv[2]) : __dirname;
 const filesDir = path.join(rootDir, 'files');
 const backgroundsDir = path.join(rootDir, 'backgrounds');
 const manifestFile = path.join(rootDir, 'manifest.json');
+const announcementsFile = path.join(rootDir, 'announcements.json');
 const port = Number(process.env.PORT || 2121);
 const bindHost = process.env.BIND_HOST || '0.0.0.0';
 const publicUrl = process.env.PUBLIC_URL || `http://127.0.0.1:${port}`;
@@ -60,6 +61,16 @@ async function buildServer() {
       return reply.code(404).send({
         error: 'manifest_not_found',
         message: 'Uruchom node generate-manifest.js po dodaniu plików.'
+      });
+    }
+  });
+
+  app.get('/announcements.json', async (_request, reply) => {
+    try {
+      return reply.type('application/json').send(await fs.readFile(announcementsFile, 'utf8'));
+    } catch {
+      return reply.type('application/json').send({
+        items: []
       });
     }
   });
