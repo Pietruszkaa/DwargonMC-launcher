@@ -27,7 +27,7 @@ git push origin main --tags
 4. GitHub Actions `Release`:
    - instaluje zaleznosci `launcher/` i `sync-server/`;
    - uruchamia typecheck i testy;
-   - ustawia wersje `launcher/package.json` z taga `vX.Y.Z` przed buildem;
+   - ustawia wersje root `package.json`, `launcher/package.json` i `launcher/package-lock.json` z taga `vX.Y.Z` przed buildem;
    - buduje Windows portable `.exe`;
    - generuje `SHA256SUMS.txt`;
    - jesli ustawiono sekret `VIRUSTOTAL_API_KEY`, wysyla `.exe` do VirusTotal i dopisuje raport do opisu release;

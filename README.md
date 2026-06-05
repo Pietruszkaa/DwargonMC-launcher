@@ -174,8 +174,8 @@ git tag v1.2.0
 git push origin main --tags
 ```
 
-Workflow release buduje Windows portable `.exe`, generuje `SHA256SUMS.txt` i publikuje assety w GitHub Releases.
-Podczas builda z taga workflow ustawia wersje launchera na podstawie taga `vX.Y.Z`, a UI pokazuje wersje z `app.getVersion()`.
+Workflow release ustawia wersje z taga `vX.Y.Z` w plikach package, buduje Windows portable `.exe`, generuje `SHA256SUMS.txt` i publikuje assety w GitHub Releases.
+UI pokazuje wersje z `app.getVersion()`, a plik `.exe` dostaje nazwe w formacie `DwargonMC Launcher-X.Y.Z-portable.exe`.
 
 Jesli w repo ustawiony jest sekret `VIRUSTOTAL_API_KEY`, workflow wysyla `.exe` do VirusTotal i dopisuje link do raportu w opisie release. Brak sekretu pomija skan bez przerywania buildu.
 
