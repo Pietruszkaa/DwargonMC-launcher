@@ -54,7 +54,7 @@
       }
     ],
     "win": {
-      "icon": "assets/icon.png",
+      "icon": "assets/icon.ico",
       "artifactName": "${productName}-${version}-portable.${ext}",
       "target": [
         "dir",
