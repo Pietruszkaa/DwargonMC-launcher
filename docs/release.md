@@ -49,5 +49,6 @@ Jesli sekret nie istnieje, workflow pomija skan i publikuje release bez linku Vi
 
 - Auto-update v2 czyta GitHub Releases z `Pietruszkaa/DwargonMC-launcher`.
 - Launcher szuka assetu `.exe`; `SHA256SUMS.txt` jest pokazywany jako dodatkowy plik release.
+- Publiczna strona pobierania czyta najnowszy release z GitHub API i pokazuje asset `.exe`, SHA256 oraz link VirusTotal z opisu release.
 - Release nie powinien zawierac `minecraft/`, `launcher-data/`, `release/` z lokalnego komputera ani paczek sync-servera.
 - Unsigned build moze byc blokowany przez Microsoft Smart App Control/SmartScreen. Do czasu podpisywania kodu strona pobierania powinna pokazac instrukcje `Wlasciwosci -> Odblokuj`.

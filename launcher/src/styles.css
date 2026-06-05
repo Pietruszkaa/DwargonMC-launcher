@@ -974,6 +974,94 @@ button:disabled {
   padding: 20px;
 }
 
+.modrinth-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px;
+  overflow: hidden;
+}
+
+.modrinth-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 160px 150px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.modrinth-controls .play-button {
+  min-height: 42px;
+}
+
+.modrinth-results {
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+}
+
+.modrinth-card {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.34);
+  padding: 12px;
+}
+
+.modrinth-card img,
+.modrinth-icon-placeholder {
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.modrinth-card img {
+  object-fit: cover;
+}
+
+.modrinth-icon-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.modrinth-card header {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+
+.modrinth-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modrinth-card p {
+  margin: 0 0 5px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.modrinth-card small {
+  color: var(--muted);
+}
+
+.modrinth-card button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.42);
+  color: var(--good);
+  padding: 0 12px;
+  font-weight: 800;
+}
+
 .update-panel p {
   margin: 0;
 }
@@ -1038,6 +1126,34 @@ button:disabled {
   overflow: auto;
 }
 
+.files-sections {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px;
+  overflow: hidden;
+}
+
+.files-sections section {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.files-sections h3 {
+  margin: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.files-sections .file-table {
+  padding: 12px;
+}
+
 .file-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 86px 120px;
@@ -1045,6 +1161,10 @@ button:disabled {
   align-items: center;
   min-height: 42px;
   border-bottom: 1px solid var(--line);
+}
+
+.player-addon-row {
+  grid-template-columns: minmax(0, 1fr) 112px 80px;
 }
 
 .file-row span,

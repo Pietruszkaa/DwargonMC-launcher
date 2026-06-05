@@ -117,6 +117,13 @@ GET /map
 GET /map/*
 ```
 
+Endpoint administracyjny:
+
+```text
+PUT /admin/announcements.json
+Authorization: Bearer <ADMIN_TOKEN>
+```
+
 Zmienne srodowiskowe:
 
 ```text
@@ -126,14 +133,80 @@ PUBLIC_URL=https://example.com
 MAP_TARGET=http://127.0.0.1:8888
 MC_HOST=127.0.0.1
 MC_PORT=25565
+ADMIN_TOKEN=
 MAP_ACCESS_CLIENT_ID=
 MAP_ACCESS_CLIENT_SECRET=
 MAP_REQUEST_HEADERS=
 ```
 
 `MAP_ACCESS_CLIENT_ID`, `MAP_ACCESS_CLIENT_SECRET` i `MAP_REQUEST_HEADERS` sa opcjonalnymi naglowkami dla chronionego upstreamu mapy. Dzialaja tylko wtedy, gdy to sync-server odpytuje `MAP_TARGET`.
+`ADMIN_TOKEN` wlacza zapis komunikatow przez `admin-site`. Bez tokenu endpoint administracyjny zawsze zwraca `401`.
 
 Przykladowy unit systemd jest w `sync-server/systemd/dwargonmc-sync-server.service`.
+
+### Docker / Dockage
+
+Repo zawiera compose w stylu Dockage: oficjalny bazowy image + bind mount katalogu projektu. Rootowy `docker-compose.yml` nie uzywa `build`, wiec Dockage nie musi widziec Dockerfile.
+Rootowy compose uzywa `network_mode: host`, zeby backend widzial mape i serwer MC na `127.0.0.1`.
+
+```text
+docker-compose.yml
+sync-server/docker-compose.yml
+download-site/docker-compose.yml
+admin-site/docker-compose.yml
+```
+
+Jesli Dockage wskazuje compose z roota projektu, uzyj `docker-compose.yml`. Serwisy maja wtedy konteksty:
+
+```text
+/home/kubiq/DwargonMC/sync-server
+/home/kubiq/DwargonMC/admin-site
+/home/kubiq/DwargonMC/download-site
+```
+
+Start calego stacka:
+
+```bash
+docker compose up -d
+```
+
+Backend uzywa `sync-server/` jako katalogu danych. W tym katalogu trzymaj:
+
+```text
+sync-server/files/
+sync-server/backgrounds/
+sync-server/manifest.json
+sync-server/announcements.json
+```
+
+Po zmianie paczki plikow wygeneruj manifest w kontenerze:
+
+```bash
+cd sync-server
+docker compose exec sync-server node generate-manifest.js /data
+```
+
+Albo z rootowego compose:
+
+```bash
+docker compose exec sync-server node /data/generate-manifest.js /data
+```
+
+Przed deployem zmien w `docker-compose.yml` albo `sync-server/docker-compose.yml`:
+
+- `ADMIN_TOKEN`
+- `PUBLIC_URL`
+- `MAP_TARGET`
+- `MC_HOST`
+- porty publikowanych stron, jesli ida za reverse proxy
+
+Domyslne porty hosta w rootowym compose:
+
+```text
+2121 - sync-server
+8081 - download-site
+8082 - admin-site
+```
 
 ## Zasady synca
 

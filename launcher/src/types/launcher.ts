@@ -8,6 +8,17 @@ export type ManagedFile = {
   version?: string;
 };
 
+export type PlayerAddonKind = 'mod' | 'resourcepack' | 'shader';
+
+export type PlayerAddonFile = {
+  kind: PlayerAddonKind;
+  name: string;
+  path: string;
+  size: number;
+  sha1: string;
+  sha512: string;
+};
+
 export type Manifest = {
   version: string;
   generatedAt: string;
@@ -96,6 +107,7 @@ export type LauncherState = {
   launch: LaunchStatus;
   logs: string[];
   managedFiles: ManagedFile[];
+  playerAddons: PlayerAddonFile[];
   backgrounds: string[];
   announcements: AnnouncementsStatus;
   update: UpdateStatus;
@@ -152,6 +164,50 @@ export type ReinstallCoreResult = {
   message: string;
 };
 
+export type ModrinthProjectType = 'mod' | 'resourcepack' | 'shader';
+export type ModrinthSort = 'relevance' | 'downloads' | 'updated' | 'newest';
+
+export type ModrinthSearchRequest = {
+  query: string;
+  projectType: ModrinthProjectType;
+  sort: ModrinthSort;
+};
+
+export type ModrinthProject = {
+  projectId: string;
+  slug: string;
+  title: string;
+  description: string;
+  author: string;
+  projectType: ModrinthProjectType;
+  clientSide: string;
+  serverSide: string;
+  downloads: number;
+  iconUrl: string | null;
+};
+
+export type ModrinthInstallRequest = {
+  projectId: string;
+  projectType: ModrinthProjectType;
+};
+
+export type ModrinthInstallResult = {
+  installed: boolean;
+  message: string;
+  fileName: string | null;
+  targetPath: string | null;
+};
+
+export type ModrinthAddonUpdate = {
+  path: string;
+  status: 'unknown' | 'current' | 'update';
+  projectId: string | null;
+  versionNumber: string | null;
+  fileName: string | null;
+  downloadUrl: string | null;
+  message: string;
+};
+
 export type LauncherApi = {
   getState(): Promise<LauncherState>;
   saveSettings(settings: LauncherSettings): Promise<LauncherSettings>;
@@ -161,12 +217,17 @@ export type LauncherApi = {
   logoutMicrosoft(): Promise<LauncherProfile>;
   runSync(): Promise<SyncStatus>;
   refreshAnnouncements(): Promise<AnnouncementsStatus>;
+  searchModrinth(request: ModrinthSearchRequest): Promise<ModrinthProject[]>;
+  installModrinth(request: ModrinthInstallRequest): Promise<ModrinthInstallResult>;
+  checkAddonUpdates(): Promise<ModrinthAddonUpdate[]>;
   checkUpdate(): Promise<UpdateStatus>;
   openUpdateDownload(): Promise<void>;
   reinstallCore(): Promise<ReinstallCoreResult>;
   launchGame(request: LaunchRequest): Promise<LaunchStatus>;
   listManagedFiles(): Promise<ManagedFile[]>;
+  listPlayerAddons(): Promise<PlayerAddonFile[]>;
   openMinecraftFolder(): Promise<void>;
+  openAddonFolder(kind: PlayerAddonKind): Promise<void>;
   chooseJavaPath(): Promise<string | null>;
   windowAction(action: 'minimize' | 'maximize' | 'close'): Promise<void>;
   onState(callback: (state: LauncherState) => void): () => void;

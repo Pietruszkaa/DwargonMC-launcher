@@ -64,6 +64,16 @@ let state: LauncherState = {
   },
   logs: ['Mock renderer działa bez Electron IPC.'],
   managedFiles: [],
+  playerAddons: [
+    {
+      kind: 'resourcepack',
+      name: 'mock-pack.zip',
+      path: 'resourcepacks/mock-pack.zip',
+      size: 1024,
+      sha1: 'mock-sha1',
+      sha512: 'mock-sha512'
+    }
+  ],
   backgrounds: [
     '/assets/backgrounds/1.png',
     '/assets/backgrounds/2.png',
@@ -190,6 +200,42 @@ export function getLauncherApi(): LauncherApi {
     async refreshAnnouncements() {
       return state.announcements;
     },
+    async searchModrinth(request) {
+      return [
+        {
+          projectId: 'mock-sodium',
+          slug: 'sodium',
+          title: request.projectType === 'shader' ? 'Mock Shader' : 'Mock Sodium',
+          description: 'Przykladowy wynik Modrinth w trybie dev bez Electron IPC.',
+          author: 'Modrinth',
+          projectType: request.projectType,
+          clientSide: 'required',
+          serverSide: request.projectType === 'mod' ? 'unsupported' : 'unknown',
+          downloads: 123456,
+          iconUrl: null
+        }
+      ];
+    },
+    async installModrinth(request) {
+      const folder = request.projectType === 'shader' ? 'shaderpacks' : request.projectType === 'resourcepack' ? 'resourcepacks' : 'mods';
+      return {
+        installed: true,
+        message: `Mock: zainstalowano dodatek w ${folder}.`,
+        fileName: `mock-${request.projectType}.jar`,
+        targetPath: `minecraft/${folder}/mock-${request.projectType}.jar`
+      };
+    },
+    async checkAddonUpdates() {
+      return state.playerAddons.map((file) => ({
+        path: file.path,
+        status: 'unknown',
+        projectId: null,
+        versionNumber: null,
+        fileName: null,
+        downloadUrl: null,
+        message: 'Mock: zrodlo nieznane w Modrinth.'
+      }));
+    },
     async checkUpdate() {
       return state.update;
     },
@@ -229,7 +275,13 @@ export function getLauncherApi(): LauncherApi {
       const files: ManagedFile[] = state.managedFiles;
       return files;
     },
+    async listPlayerAddons() {
+      return state.playerAddons;
+    },
     async openMinecraftFolder() {
+      return undefined;
+    },
+    async openAddonFolder() {
       return undefined;
     },
     async chooseJavaPath() {

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { sha256File } from './hash';
@@ -10,6 +11,17 @@ export type ManagedFile = {
   size: number;
   sha256: string;
   version?: string;
+};
+
+export type PlayerAddonKind = 'mod' | 'resourcepack' | 'shader';
+
+export type PlayerAddonFile = {
+  kind: PlayerAddonKind;
+  name: string;
+  path: string;
+  size: number;
+  sha1: string;
+  sha512: string;
 };
 
 export type Manifest = {
@@ -62,7 +74,8 @@ export async function syncManifestFiles(
   await fs.mkdir(paths.minecraftDir, { recursive: true });
   await fs.mkdir(path.join(paths.assetsDir, 'backgrounds'), { recursive: true });
 
-  const backgrounds = manifest.backgrounds ?? [];
+  const managesBackgrounds = Array.isArray(manifest.backgrounds);
+  const backgrounds = managesBackgrounds ? manifest.backgrounds ?? [] : [];
   const totalFiles = manifest.files.length + backgrounds.length;
   let completedFiles = 0;
 
@@ -114,7 +127,9 @@ export async function syncManifestFiles(
     report(status('downloading', false, 'Synchronizacja teł...', completedFiles, totalFiles, background.path));
   }
 
-  await removeOrphanBackgrounds(paths.assetsDir, backgrounds);
+  if (managesBackgrounds) {
+    await removeOrphanBackgrounds(paths.assetsDir, backgrounds);
+  }
 
   const complete = status('complete', true, 'Pliki zweryfikowane.', completedFiles, totalFiles);
   report(complete);
@@ -147,6 +162,38 @@ export async function listManagedLocalFiles(minecraftDir: string): Promise<Manag
       };
     })
   );
+}
+
+export async function listPlayerAddonFiles(minecraftDir: string): Promise<PlayerAddonFile[]> {
+  const groups: Array<{ kind: PlayerAddonKind; dir: string }> = [
+    { kind: 'mod', dir: 'mods' },
+    { kind: 'resourcepack', dir: 'resourcepacks' },
+    { kind: 'shader', dir: 'shaderpacks' }
+  ];
+  const output: PlayerAddonFile[] = [];
+
+  for (const group of groups) {
+    const root = path.join(minecraftDir, group.dir);
+    const files = await walkFiles(root);
+
+    for (const file of files) {
+      if (path.basename(file).startsWith('_')) continue;
+      if (!isAddonFile(file)) continue;
+
+      const stat = await fs.stat(file);
+      const data = await fs.readFile(file);
+      output.push({
+        kind: group.kind,
+        name: path.basename(file),
+        path: normalizeRelativePath(path.relative(minecraftDir, file)),
+        size: stat.size,
+        sha1: crypto.createHash('sha1').update(data).digest('hex'),
+        sha512: crypto.createHash('sha512').update(data).digest('hex')
+      });
+    }
+  }
+
+  return output.sort((left, right) => left.path.localeCompare(right.path, 'pl'));
 }
 
 export function managedLocalPath(minecraftDir: string, remotePath: string): string {
@@ -288,4 +335,9 @@ function encodeRemotePath(remotePath: string): string {
 
 function normalizeRelativePath(relative: string): string {
   return relative.replaceAll(path.sep, '/');
+}
+
+function isAddonFile(filePath: string): boolean {
+  const extension = path.extname(filePath).toLowerCase();
+  return extension === '.jar' || extension === '.zip';
 }

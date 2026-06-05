@@ -1,6 +1,8 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { managedLocalPath, managedRelativePath, normalizeRemotePath } from '../../electron/main/sync';
+import { listPlayerAddonFiles, managedLocalPath, managedRelativePath, normalizeRemotePath } from '../../electron/main/sync';
 
 describe('managed file paths', () => {
   it('adds underscore only to managed local filenames', () => {
@@ -16,5 +18,21 @@ describe('managed file paths', () => {
   it('resolves inside minecraft dir', () => {
     const root = path.join('/tmp', 'minecraft');
     expect(managedLocalPath(root, 'mods/sodium.jar')).toBe(path.join(root, 'mods', '_sodium.jar'));
+  });
+
+  it('lists player addon files and skips managed underscore files', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dwargon-addons-'));
+    await fs.mkdir(path.join(root, 'mods'), { recursive: true });
+    await fs.mkdir(path.join(root, 'resourcepacks'), { recursive: true });
+    await fs.writeFile(path.join(root, 'mods', 'iris.jar'), 'player mod');
+    await fs.writeFile(path.join(root, 'mods', '_server.jar'), 'managed');
+    await fs.writeFile(path.join(root, 'resourcepacks', 'faithful.zip'), 'pack');
+
+    const files = await listPlayerAddonFiles(root);
+
+    expect(files.map((file) => file.path)).toEqual(['mods/iris.jar', 'resourcepacks/faithful.zip']);
+    expect(files[0].kind).toBe('mod');
+    expect(files[0].sha1).toHaveLength(40);
+    expect(files[0].sha512).toHaveLength(128);
   });
 });

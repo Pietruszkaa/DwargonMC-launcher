@@ -4,16 +4,266 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DwargonMC Launcher</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #080808;
+        --panel: rgba(0, 0, 0, 0.72);
+        --line: rgba(255, 255, 255, 0.18);
+        --text: #f2f4f3;
+        --muted: #9aa2a9;
+        --good: #67d68a;
+        --warn: #ffc857;
+        --bad: #ff5252;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background: radial-gradient(circle at 24% 14%, rgba(76, 175, 80, 0.14), transparent 28%), var(--bg);
+        color: var(--text);
+      }
+
+      main {
+        width: min(1040px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0;
+      }
+
+      header {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 28px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(34px, 5vw, 62px);
+        letter-spacing: 0;
+      }
+
+      p {
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+        gap: 18px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        padding: 20px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .download-button {
+        min-height: 52px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(103, 214, 138, 0.6);
+        background: rgba(76, 175, 80, 0.18);
+        color: var(--good);
+        padding: 0 22px;
+        text-decoration: none;
+        font-weight: 900;
+      }
+
+      .secondary {
+        color: var(--muted);
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        background: var(--warn);
+      }
+
+      .dot.online {
+        background: var(--good);
+      }
+
+      .dot.offline {
+        background: var(--bad);
+      }
+
+      code {
+        display: block;
+        overflow-wrap: anywhere;
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.38);
+        padding: 10px;
+        color: var(--muted);
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      @media (max-width: 780px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
   </head>
   <body>
     <main>
-      <h1>DwargonMC Launcher</h1>
-      <p>Strona pobierania launchera. Pelna wersja strony powstanie w v2.</p>
-      <ul>
-        <li>Najnowszy plik .exe</li>
-        <li>SHA256</li>
-        <li>Link do GitHub Releases</li>
-      </ul>
+      <header>
+        <h1>DwargonMC Launcher</h1>
+        <p>Portable launcher dla Minecraft 1.21.1 NeoForge. Pobierz najnowszy build Windows i uruchom bez instalatora.</p>
+      </header>
+
+      <section class="grid">
+        <div class="panel stack">
+          <h2 id="releaseTitle">Ladowanie release...</h2>
+          <p id="releaseDescription">Pobieranie informacji z GitHub Releases.</p>
+          <a id="downloadLink" class="download-button" href="#" aria-disabled="true">Pobierz launcher</a>
+          <a id="releaseLink" class="secondary" href="https://github.com/Pietruszkaa/DwargonMC-launcher/releases">Wszystkie release</a>
+          <div>
+            <p>SHA256</p>
+            <code id="shaBox">Brak danych.</code>
+          </div>
+          <div>
+            <p>VirusTotal</p>
+            <code id="vtBox">Link pojawi sie, jesli release zawiera raport.</code>
+          </div>
+        </div>
+
+        <aside class="panel stack">
+          <h2>Status serwera</h2>
+          <div class="status">
+            <span id="serverDot" class="dot"></span>
+            <span id="serverStatus">Sprawdzanie...</span>
+          </div>
+          <p id="playersText">Lista graczy pojawi sie, gdy backend zwroci dane.</p>
+          <h2>Instrukcja</h2>
+          <ul>
+            <li>Pobierz plik `.exe`.</li>
+            <li>Przenies go do osobnego folderu.</li>
+            <li>Przy pierwszym starcie launcher przygotuje lokalne katalogi.</li>
+            <li>Jesli Windows zablokuje plik, otworz wlasciwosci `.exe` i zaznacz odblokowanie.</li>
+          </ul>
+        </aside>
+      </section>
     </main>
+
+    <script>
+      const config = {
+        releaseApi: 'https://api.github.com/repos/Pietruszkaa/DwargonMC-launcher/releases/latest',
+        releasesUrl: 'https://github.com/Pietruszkaa/DwargonMC-launcher/releases',
+        backendUrl: 'https://dwargonmc-sync.petershub.xyz'
+      };
+
+      loadRelease();
+      loadHealth();
+
+      async function loadRelease() {
+        try {
+          const response = await fetch(config.releaseApi, {
+            headers: {
+              Accept: 'application/vnd.github+json'
+            }
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const release = await response.json();
+          const exe = release.assets.find((asset) => asset.name.endsWith('.exe'));
+          const sha = release.assets.find((asset) => asset.name === 'SHA256SUMS.txt');
+
+          document.querySelector('#releaseTitle').textContent = `Najnowsza wersja: ${release.tag_name}`;
+          document.querySelector('#releaseDescription').textContent = release.name || 'Windows portable build.';
+          document.querySelector('#releaseLink').href = release.html_url || config.releasesUrl;
+
+          if (exe) {
+            const link = document.querySelector('#downloadLink');
+            link.href = exe.browser_download_url;
+            link.textContent = `Pobierz ${exe.name}`;
+            link.removeAttribute('aria-disabled');
+          }
+
+          if (sha) {
+            try {
+              document.querySelector('#shaBox').textContent = await fetchText(sha.url);
+            } catch {
+              document.querySelector('#shaBox').innerHTML = `<a href="${sha.browser_download_url}">${sha.name}</a>`;
+            }
+          }
+
+          const vtUrl = findVirusTotalUrl(release.body || '');
+          if (vtUrl) {
+            document.querySelector('#vtBox').innerHTML = `<a href="${vtUrl}">${vtUrl}</a>`;
+          }
+        } catch (error) {
+          document.querySelector('#releaseTitle').textContent = 'Nie udalo sie pobrac release.';
+          document.querySelector('#releaseDescription').textContent = error.message;
+        }
+      }
+
+      async function loadHealth() {
+        try {
+          const response = await fetch(`${config.backendUrl}/health`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const health = await response.json();
+          const online = Boolean(health.serverOnline);
+          document.querySelector('#serverDot').className = `dot ${online ? 'online' : 'offline'}`;
+          document.querySelector('#serverStatus').textContent = online ? 'Backend online, MC online' : 'Backend online, MC offline';
+          document.querySelector('#playersText').textContent =
+            health.playersOnline === null
+              ? health.message || 'Backend dziala, brak danych o graczach.'
+              : `Gracze: ${health.playersOnline}/${health.playersMax ?? '?'}`;
+        } catch (error) {
+          document.querySelector('#serverDot').className = 'dot offline';
+          document.querySelector('#serverStatus').textContent = 'Backend offline';
+          document.querySelector('#playersText').textContent = error.message;
+        }
+      }
+
+      async function fetchText(url) {
+        const response = await fetch(url, {
+          headers: {
+            Accept: 'application/octet-stream'
+          }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+      }
+
+      function findVirusTotalUrl(body) {
+        const match = body.match(/https:\/\/www\.virustotal\.com\/gui\/file\/[a-f0-9]{64}/i);
+        return match ? match[0] : '';
+      }
+    </script>
   </body>
 </html>

@@ -82,6 +82,30 @@ describe('runSync', () => {
     expect(result.phase).toBe('warning');
     expect(result.verified).toBe(false);
   });
+
+  it('keeps local backgrounds when manifest does not manage backgrounds', async () => {
+    const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'dwargon-sync-backgrounds-'));
+    const paths = minimalPaths(temp);
+    const localBackground = path.join(temp, 'assets', 'backgrounds', 'local.png');
+    await fs.mkdir(path.dirname(localBackground), { recursive: true });
+    await fs.writeFile(localBackground, 'local background');
+
+    const result = await syncManifestFiles(
+      paths,
+      {
+        version: 'test',
+        generatedAt: new Date().toISOString(),
+        files: []
+      },
+      async () => {
+        throw new Error('No downloads expected.');
+      },
+      () => undefined
+    );
+
+    expect(result.phase).toBe('complete');
+    await expect(fs.readFile(localBackground, 'utf8')).resolves.toBe('local background');
+  });
 });
 
 function minimalPaths(root: string): LauncherPaths {

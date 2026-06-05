@@ -4,11 +4,360 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DwargonMC Admin</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #080808;
+        --panel: rgba(0, 0, 0, 0.72);
+        --line: rgba(255, 255, 255, 0.18);
+        --text: #f2f4f3;
+        --muted: #9aa2a9;
+        --good: #67d68a;
+        --warn: #ffc857;
+        --bad: #ff5252;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      main {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 32px 0;
+      }
+
+      header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 32px;
+      }
+
+      p {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+        gap: 18px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        padding: 18px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      label {
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      input,
+      textarea,
+      select,
+      button {
+        min-height: 40px;
+        border: 1px solid var(--line);
+        border-radius: 0;
+        background: rgba(0, 0, 0, 0.42);
+        color: var(--text);
+        font: inherit;
+      }
+
+      input,
+      textarea,
+      select {
+        width: 100%;
+        padding: 9px 11px;
+        outline: none;
+      }
+
+      textarea {
+        min-height: 520px;
+        resize: vertical;
+        font-family: "Cascadia Mono", Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      button {
+        padding: 0 14px;
+        cursor: pointer;
+        font-weight: 800;
+      }
+
+      button:hover {
+        border-color: rgba(255, 255, 255, 0.38);
+      }
+
+      button.primary {
+        color: var(--good);
+      }
+
+      button.warn {
+        color: var(--warn);
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .status {
+        min-height: 22px;
+        color: var(--muted);
+      }
+
+      .status.good {
+        color: var(--good);
+      }
+
+      .status.bad {
+        color: var(--bad);
+      }
+
+      .preview {
+        display: grid;
+        gap: 10px;
+      }
+
+      .preview article {
+        border-left: 3px solid var(--muted);
+        background: rgba(0, 0, 0, 0.36);
+        padding: 12px;
+      }
+
+      .preview article.warning,
+      .preview article.maintenance {
+        border-left-color: var(--warn);
+      }
+
+      .preview article.update,
+      .preview article.info {
+        border-left-color: var(--good);
+      }
+
+      .preview strong {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      @media (max-width: 840px) {
+        header,
+        .grid {
+          grid-template-columns: 1fr;
+          display: grid;
+        }
+      }
+    </style>
   </head>
   <body>
     <main>
-      <h1>DwargonMC Admin</h1>
-      <p>Panel administracyjny pod wiadomosci i podglad sync-server. Pelna wersja powstanie w v2.</p>
+      <header>
+        <div>
+          <h1>DwargonMC Admin</h1>
+          <p>Edycja publicznych komunikatow launchera zapisanych w `announcements.json`.</p>
+        </div>
+        <p id="status" class="status">Gotowy.</p>
+      </header>
+
+      <section class="grid">
+        <aside class="panel stack">
+          <label>
+            Backend URL
+            <input id="backendUrl" placeholder="https://dwargonmc-sync.petershub.xyz" />
+          </label>
+          <label>
+            Admin token
+            <input id="adminToken" type="password" autocomplete="current-password" />
+          </label>
+          <div class="actions">
+            <button id="loadButton" type="button">Pobierz</button>
+            <button id="saveButton" class="primary" type="button">Zapisz</button>
+            <button id="formatButton" class="warn" type="button">Formatuj</button>
+          </div>
+          <div class="panel">
+            <h2>Podglad</h2>
+            <div id="preview" class="preview"></div>
+          </div>
+        </aside>
+
+        <section class="panel stack">
+          <label>
+            announcements.json
+            <textarea id="editor" spellcheck="false"></textarea>
+          </label>
+        </section>
+      </section>
     </main>
+
+    <script>
+      const backendUrlInput = document.querySelector('#backendUrl');
+      const adminTokenInput = document.querySelector('#adminToken');
+      const editor = document.querySelector('#editor');
+      const preview = document.querySelector('#preview');
+      const status = document.querySelector('#status');
+
+      backendUrlInput.value = localStorage.getItem('dwargonAdminBackendUrl') || 'https://dwargonmc-sync.petershub.xyz';
+      editor.value = JSON.stringify(
+        {
+          items: [
+            {
+              id: 'welcome',
+              title: 'DwargonMC',
+              body: 'Komunikat widoczny w launcherze.',
+              level: 'info',
+              date: new Date().toISOString(),
+              link: null,
+              expiresAt: null
+            }
+          ]
+        },
+        null,
+        2
+      );
+
+      document.querySelector('#loadButton').addEventListener('click', loadAnnouncements);
+      document.querySelector('#saveButton').addEventListener('click', saveAnnouncements);
+      document.querySelector('#formatButton').addEventListener('click', formatJson);
+      editor.addEventListener('input', renderPreview);
+
+      renderPreview();
+
+      async function loadAnnouncements() {
+        saveLocalConfig();
+        setStatus('Pobieranie...', '');
+
+        try {
+          const response = await fetch(`${backendBase()}/announcements.json`, {
+            headers: {
+              Accept: 'application/json'
+            }
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+          editor.value = JSON.stringify(payload, null, 2);
+          renderPreview();
+          setStatus('Pobrano komunikaty.', 'good');
+        } catch (error) {
+          setStatus(`Blad pobierania: ${error.message}`, 'bad');
+        }
+      }
+
+      async function saveAnnouncements() {
+        saveLocalConfig();
+        setStatus('Zapisywanie...', '');
+
+        let payload;
+        try {
+          payload = JSON.parse(editor.value);
+        } catch (error) {
+          setStatus(`Niepoprawny JSON: ${error.message}`, 'bad');
+          return;
+        }
+
+        try {
+          const response = await fetch(`${backendBase()}/admin/announcements.json`, {
+            method: 'PUT',
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${adminTokenInput.value.trim()}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
+          editor.value = JSON.stringify(result, null, 2);
+          renderPreview();
+          setStatus('Zapisano komunikaty.', 'good');
+        } catch (error) {
+          setStatus(`Blad zapisu: ${error.message}`, 'bad');
+        }
+      }
+
+      function formatJson() {
+        try {
+          editor.value = JSON.stringify(JSON.parse(editor.value), null, 2);
+          renderPreview();
+          setStatus('Sformatowano JSON.', 'good');
+        } catch (error) {
+          setStatus(`Niepoprawny JSON: ${error.message}`, 'bad');
+        }
+      }
+
+      function renderPreview() {
+        preview.textContent = '';
+
+        let payload;
+        try {
+          payload = JSON.parse(editor.value);
+        } catch {
+          preview.textContent = 'JSON wymaga poprawy.';
+          return;
+        }
+
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (!items.length) {
+          preview.textContent = 'Brak komunikatow.';
+          return;
+        }
+
+        for (const item of items.slice(0, 6)) {
+          const article = document.createElement('article');
+          article.className = item.level || 'info';
+          article.innerHTML = `<strong></strong><p></p>`;
+          article.querySelector('strong').textContent = item.title || '(bez tytulu)';
+          article.querySelector('p').textContent = item.body || '';
+          preview.append(article);
+        }
+      }
+
+      function backendBase() {
+        return backendUrlInput.value.trim().replace(/\/+$/, '');
+      }
+
+      function saveLocalConfig() {
+        localStorage.setItem('dwargonAdminBackendUrl', backendBase());
+      }
+
+      function setStatus(message, kind) {
+        status.textContent = message;
+        status.className = `status ${kind || ''}`;
+      }
+    </script>
   </body>
 </html>

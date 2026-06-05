@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { Modal } from '~components/Modal';
 import { getLauncherApi } from '@/lib/mockLauncher';
 import { t } from '@/lib/i18n';
-import type { Announcement, CrashInfo, LauncherSettings, LauncherState } from '@/types/launcher';
+import type { Announcement, CrashInfo, LauncherSettings, LauncherState, ModrinthAddonUpdate, ModrinthProject, ModrinthProjectType, ModrinthSort } from '@/types/launcher';
 
-type Popup = 'settings' | 'files' | 'map' | 'logs' | null;
+type Popup = 'settings' | 'files' | 'map' | 'logs' | 'modrinth' | null;
 
 const api = getLauncherApi();
 
@@ -140,6 +140,9 @@ export function App(): JSX.Element {
             <button className="menu-btn" type="button" onClick={() => setPopup('logs')}>
               {copy.logs}
             </button>
+            <button className="menu-btn" type="button" onClick={() => setPopup('modrinth')}>
+              Dodatki
+            </button>
             <div className="spacer" />
             <button className="icon-btn" type="button" onClick={() => void api.openMinecraftFolder()} title="Folder z grą">
               Folder
@@ -193,6 +196,7 @@ export function App(): JSX.Element {
       {popup === 'files' && <FilesModal state={state} onClose={() => setPopup(null)} />}
       {popup === 'map' && <MapModal backendUrl={state.settings.backendUrl} onClose={() => setPopup(null)} />}
       {popup === 'logs' && <LogsModal logs={state.logs} onClose={() => setPopup(null)} />}
+      {popup === 'modrinth' && <ModrinthModal onClose={() => setPopup(null)} />}
       {state.update.available && !updateDismissed && (
         <UpdateModal state={state} onClose={() => setUpdateDismissed(true)} />
       )}
@@ -506,28 +510,83 @@ function SettingsModal({ state, onClose }: { state: LauncherState; onClose: () =
 
 function FilesModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {
   const copy = t(state.settings.language);
+  const [updates, setUpdates] = useState<ModrinthAddonUpdate[]>([]);
+  const [checking, setChecking] = useState(false);
+  const updateByPath = useMemo(() => new Map(updates.map((update) => [update.path, update])), [updates]);
+  const refreshAddons = async (): Promise<void> => {
+    await api.listPlayerAddons();
+  };
+  const checkUpdates = async (): Promise<void> => {
+    setChecking(true);
+    try {
+      setUpdates(await api.checkAddonUpdates());
+    } finally {
+      setChecking(false);
+    }
+  };
 
   return (
     <Modal title={copy.files} onClose={onClose} wide>
       <div className="file-actions">
         <button type="button" onClick={() => void api.openMinecraftFolder()}>{copy.openFolder}</button>
+        <button type="button" onClick={() => void api.openAddonFolder('mod')}>Mods</button>
+        <button type="button" onClick={() => void api.openAddonFolder('resourcepack')}>Resourcepacks</button>
+        <button type="button" onClick={() => void api.openAddonFolder('shader')}>Shaderpacks</button>
         <button type="button" onClick={() => void api.runSync()}>{copy.resync}</button>
+        <button type="button" onClick={refreshAddons}>Odśwież</button>
+        <button type="button" onClick={checkUpdates} disabled={checking}>
+          {checking ? 'Sprawdzanie...' : 'Sprawdź update'}
+        </button>
       </div>
-      <div className="file-table">
-        {state.managedFiles.length === 0 ? (
-          <p>Brak lokalnych plików zarządzanych.</p>
-        ) : (
-          state.managedFiles.map((file) => (
-            <div className="file-row" key={file.path}>
-              <span>{file.path}</span>
-              <strong>{Math.round(file.size / 1024)} KB</strong>
-              <code>{file.sha256.slice(0, 12)}</code>
-            </div>
-          ))
-        )}
+      <div className="files-sections">
+        <section>
+          <h3>Pliki serwera</h3>
+          <div className="file-table">
+            {state.managedFiles.length === 0 ? (
+              <p>Brak lokalnych plików zarządzanych.</p>
+            ) : (
+              state.managedFiles.map((file) => (
+                <div className="file-row" key={file.path}>
+                  <span>{file.path}</span>
+                  <strong>{Math.round(file.size / 1024)} KB</strong>
+                  <code>{file.sha256.slice(0, 12)}</code>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+        <section>
+          <h3>Dodatki gracza</h3>
+          <div className="file-table">
+            {state.playerAddons.length === 0 ? (
+              <p>Brak lokalnych resourcepacków, shaderpacków albo modów gracza.</p>
+            ) : (
+              state.playerAddons.map((file) => (
+                <div className="file-row player-addon-row" key={file.path}>
+                  <span>{file.path}</span>
+                  <strong>{addonKindLabel(file.kind)}</strong>
+                  <code>{addonUpdateLabel(updateByPath.get(file.path))}</code>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
       </div>
     </Modal>
   );
+}
+
+function addonKindLabel(kind: LauncherState['playerAddons'][number]['kind']): string {
+  if (kind === 'resourcepack') return 'Resourcepack';
+  if (kind === 'shader') return 'Shader';
+  return 'Mod';
+}
+
+function addonUpdateLabel(update: ModrinthAddonUpdate | undefined): string {
+  if (!update) return 'nie sprawdzono';
+  if (update.status === 'update') return update.versionNumber ? `update ${update.versionNumber}` : 'update';
+  if (update.status === 'current') return 'aktualne';
+  return 'nieznane';
 }
 
 function MapModal({ backendUrl, onClose }: { backendUrl: string; onClose: () => void }): JSX.Element {
@@ -558,6 +617,104 @@ function LogsModal({ logs, onClose }: { logs: string[]; onClose: () => void }): 
       <pre className="logs-view" ref={logRef}>{logs.length ? logs.join('\n') : 'Brak logów JVM.'}</pre>
     </Modal>
   );
+}
+
+function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
+  const [query, setQuery] = useState('');
+  const [projectType, setProjectType] = useState<ModrinthProjectType>('resourcepack');
+  const [sort, setSort] = useState<ModrinthSort>('relevance');
+  const [results, setResults] = useState<ModrinthProject[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('Wyszukuj resourcepacki, shaderpacki i opcjonalne client-side mody dla Minecraft 1.21.1.');
+
+  const search = async (): Promise<void> => {
+    setBusy(true);
+    setMessage('Wyszukiwanie w Modrinth...');
+    try {
+      const next = await api.searchModrinth({ query, projectType, sort });
+      setResults(next);
+      setMessage(next.length ? `Znaleziono ${next.length} wynikow.` : 'Brak wynikow dla tych filtrow.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Nie udalo sie pobrac wynikow Modrinth.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const install = async (project: ModrinthProject): Promise<void> => {
+    setBusy(true);
+    setMessage(`Instalowanie ${project.title}...`);
+    try {
+      const result = await api.installModrinth({ projectId: project.projectId, projectType: project.projectType });
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Nie udalo sie zainstalowac dodatku.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Dodatki Modrinth" onClose={onClose} wide>
+      <div className="modrinth-panel">
+        <div className="modrinth-controls">
+          <label className="field">
+            <span>Szukaj</span>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Sodium, Complementary, Faithful..." />
+          </label>
+          <label className="field">
+            <span>Typ</span>
+            <select value={projectType} onChange={(event) => setProjectType(event.target.value as ModrinthProjectType)}>
+              <option value="resourcepack">Resourcepack</option>
+              <option value="shader">Shaderpack</option>
+              <option value="mod">Client-side mod</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Sortuj</span>
+            <select value={sort} onChange={(event) => setSort(event.target.value as ModrinthSort)}>
+              <option value="relevance">Trafnosc</option>
+              <option value="downloads">Pobrania</option>
+              <option value="updated">Aktualizowane</option>
+              <option value="newest">Najnowsze</option>
+            </select>
+          </label>
+          <button className="play-button compact" type="button" onClick={search} disabled={busy}>
+            {busy ? 'Pracuje...' : 'Szukaj'}
+          </button>
+        </div>
+
+        <p className="notice notice-warn">{message}</p>
+
+        <div className="modrinth-results">
+          {results.map((project) => (
+            <article className="modrinth-card" key={project.projectId}>
+              {project.iconUrl ? <img src={project.iconUrl} alt="" /> : <span className="modrinth-icon-placeholder">{project.title.slice(0, 1)}</span>}
+              <div>
+                <header>
+                  <strong>{project.title}</strong>
+                  <small>{projectTypeLabel(project.projectType)} · {project.downloads.toLocaleString('pl-PL')} pobran</small>
+                </header>
+                <p>{project.description}</p>
+                {project.projectType === 'mod' && (
+                  <small>Client: {project.clientSide || 'unknown'} · Server: {project.serverSide || 'unknown'}</small>
+                )}
+              </div>
+              <button type="button" onClick={() => install(project)} disabled={busy}>
+                Instaluj
+              </button>
+            </article>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function projectTypeLabel(projectType: ModrinthProjectType): string {
+  if (projectType === 'resourcepack') return 'Resourcepack';
+  if (projectType === 'shader') return 'Shaderpack';
+  return 'Client-side mod';
 }
 
 function UpdateModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {

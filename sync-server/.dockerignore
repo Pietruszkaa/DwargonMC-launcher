@@ -1,0 +1,9 @@
+node_modules/
+npm-debug.log*
+files/
+backgrounds/
+manifest.json
+*.local.json
+access*.json
+.env
+.env.*

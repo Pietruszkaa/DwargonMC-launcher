@@ -30,7 +30,8 @@ async function buildServer() {
 
   await app.register(cors, {
     origin: true,
-    methods: ['GET', 'HEAD']
+    methods: ['GET', 'HEAD', 'PUT', 'OPTIONS'],
+    allowedHeaders: ['Accept', 'Authorization', 'Content-Type', 'X-Admin-Token']
   });
 
   await app.register(rateLimit, {
@@ -42,15 +43,16 @@ async function buildServer() {
   await fs.mkdir(backgroundsDir, { recursive: true });
 
   app.get('/health', async () => {
-    const serverOnline = await checkTcp(mcHost, mcPort, 1200);
+    const minecraftStatus = await pingMinecraftStatus(mcHost, mcPort, 1800);
+    const serverOnline = minecraftStatus.online || (await checkTcp(mcHost, mcPort, 1200));
 
     return {
       ok: true,
       serverOnline,
-      playersOnline: null,
-      playersMax: null,
-      players: [],
-      message: serverOnline ? 'Serwer MC odpowiada.' : 'Backend działa, ale serwer MC nie odpowiada.'
+      playersOnline: minecraftStatus.playersOnline,
+      playersMax: minecraftStatus.playersMax,
+      players: minecraftStatus.players,
+      message: serverOnline ? 'Serwer MC odpowiada.' : 'Backend dziala, ale serwer MC nie odpowiada.'
     };
   });
 
@@ -73,6 +75,26 @@ async function buildServer() {
         items: []
       });
     }
+  });
+
+  app.put('/admin/announcements.json', async (request, reply) => {
+    if (!hasAdminAccess(request.headers, process.env.ADMIN_TOKEN)) {
+      return reply.code(401).send({
+        error: 'unauthorized',
+        message: 'Nieprawidlowy albo brakujacy token admina.'
+      });
+    }
+
+    const result = normalizeAnnouncementsPayload(request.body);
+    if (!result.ok) {
+      return reply.code(400).send({
+        error: 'invalid_announcements',
+        message: result.message
+      });
+    }
+
+    await writeJsonAtomic(announcementsFile, result.value);
+    return reply.send(result.value);
   });
 
   app.get('/files/*', async (request, reply) => {
@@ -173,6 +195,135 @@ function checkTcp(host, targetPort, timeoutMs) {
   });
 }
 
+function pingMinecraftStatus(host, targetPort, timeoutMs) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port: targetPort });
+    const chunks = [];
+    let finished = false;
+    let timer = null;
+
+    const finish = (status) => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      socket.destroy();
+      resolve(status);
+    };
+
+    timer = setTimeout(() => finish(emptyMinecraftStatus()), timeoutMs);
+
+    socket.once('connect', () => {
+      socket.write(buildMinecraftStatusRequest(host, targetPort));
+    });
+
+    socket.on('data', (chunk) => {
+      chunks.push(chunk);
+      const status = parseMinecraftStatusResponse(Buffer.concat(chunks));
+      if (status) finish(status);
+    });
+
+    socket.once('error', () => finish(emptyMinecraftStatus()));
+    socket.once('end', () => {
+      const status = parseMinecraftStatusResponse(Buffer.concat(chunks));
+      finish(status || emptyMinecraftStatus());
+    });
+  });
+}
+
+function emptyMinecraftStatus() {
+  return {
+    online: false,
+    playersOnline: null,
+    playersMax: null,
+    players: []
+  };
+}
+
+function buildMinecraftStatusRequest(host, targetPort) {
+  const hostBuffer = Buffer.from(host, 'utf8');
+  const handshake = Buffer.concat([
+    encodeVarInt(0),
+    encodeVarInt(767),
+    encodeVarInt(hostBuffer.length),
+    hostBuffer,
+    encodeUnsignedShort(targetPort),
+    encodeVarInt(1)
+  ]);
+  const request = Buffer.from([0x01, 0x00]);
+  return Buffer.concat([encodeVarInt(handshake.length), handshake, request]);
+}
+
+function parseMinecraftStatusResponse(buffer) {
+  try {
+    let offset = 0;
+    const packetLength = readVarInt(buffer, offset);
+    if (!packetLength || buffer.length < packetLength.value + packetLength.bytes) return null;
+    offset += packetLength.bytes;
+
+    const packetId = readVarInt(buffer, offset);
+    if (!packetId || packetId.value !== 0) return null;
+    offset += packetId.bytes;
+
+    const jsonLength = readVarInt(buffer, offset);
+    if (!jsonLength || buffer.length < offset + jsonLength.bytes + jsonLength.value) return null;
+    offset += jsonLength.bytes;
+
+    const payload = JSON.parse(buffer.subarray(offset, offset + jsonLength.value).toString('utf8'));
+    const sample = Array.isArray(payload.players?.sample) ? payload.players.sample : [];
+
+    return {
+      online: true,
+      playersOnline: typeof payload.players?.online === 'number' ? payload.players.online : null,
+      playersMax: typeof payload.players?.max === 'number' ? payload.players.max : null,
+      players: sample.map((player) => player?.name).filter((name) => typeof name === 'string')
+    };
+  } catch {
+    return null;
+  }
+}
+
+function encodeVarInt(value) {
+  const bytes = [];
+  let current = value >>> 0;
+
+  do {
+    let temp = current & 0x7f;
+    current >>>= 7;
+    if (current !== 0) temp |= 0x80;
+    bytes.push(temp);
+  } while (current !== 0);
+
+  return Buffer.from(bytes);
+}
+
+function readVarInt(buffer, offset) {
+  let value = 0;
+  let position = 0;
+
+  for (let index = 0; index < 5; index += 1) {
+    if (offset + index >= buffer.length) return null;
+    const current = buffer[offset + index];
+    value |= (current & 0x7f) << position;
+
+    if ((current & 0x80) === 0) {
+      return {
+        value,
+        bytes: index + 1
+      };
+    }
+
+    position += 7;
+  }
+
+  return null;
+}
+
+function encodeUnsignedShort(value) {
+  const buffer = Buffer.alloc(2);
+  buffer.writeUInt16BE(value);
+  return buffer;
+}
+
 function mapTargetUrl(target, requestUrl) {
   const base = target.endsWith('/') ? target : `${target}/`;
   let suffix = requestUrl.startsWith('/map') ? requestUrl.slice('/map'.length) : requestUrl;
@@ -184,7 +335,7 @@ function mapTargetUrl(target, requestUrl) {
 function parseMapRequestHeaders(env) {
   const headers = {};
 
-  if (env.MAP_REQUEST_HEADERS) {
+  if (env.MAP_REQUEST_HEADERS?.trim()) {
     try {
       Object.assign(headers, JSON.parse(env.MAP_REQUEST_HEADERS));
     } catch (error) {
@@ -198,6 +349,112 @@ function parseMapRequestHeaders(env) {
   }
 
   return headers;
+}
+
+function hasAdminAccess(headers, adminToken) {
+  if (!adminToken) return false;
+
+  const provided = parseAdminToken(headers);
+  if (!provided) return false;
+
+  const expectedBuffer = Buffer.from(adminToken);
+  const providedBuffer = Buffer.from(provided);
+  return expectedBuffer.length === providedBuffer.length && require('node:crypto').timingSafeEqual(expectedBuffer, providedBuffer);
+}
+
+function parseAdminToken(headers) {
+  const headerToken = headers['x-admin-token'];
+  if (typeof headerToken === 'string' && headerToken.trim()) return headerToken.trim();
+
+  const authorization = headers.authorization;
+  if (typeof authorization !== 'string') return '';
+
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : '';
+}
+
+function normalizeAnnouncementsPayload(input) {
+  const items = Array.isArray(input?.items) ? input.items : null;
+  if (!items) {
+    return { ok: false, message: 'Body musi miec format { "items": [...] }.' };
+  }
+
+  if (items.length > 20) {
+    return { ok: false, message: 'Maksymalnie 20 komunikatow.' };
+  }
+
+  const normalized = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object') {
+      return { ok: false, message: 'Kazdy komunikat musi byc obiektem.' };
+    }
+
+    const title = stringField(item.title, 120);
+    const body = stringField(item.body, 1200);
+    if (!title || !body) {
+      return { ok: false, message: 'Kazdy komunikat wymaga title i body.' };
+    }
+
+    const id = stringField(item.id, 80) || stableAnnouncementId(title, body);
+    if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+      return { ok: false, message: 'Pole id moze zawierac tylko litery, cyfry, _ i -.' };
+    }
+
+    const level = ['info', 'warning', 'maintenance', 'update'].includes(item.level) ? item.level : 'info';
+    const date = dateField(item.date) || new Date().toISOString();
+    const expiresAt = dateField(item.expiresAt);
+    const link = urlField(item.link);
+
+    normalized.push({
+      id,
+      title,
+      body,
+      level,
+      date,
+      link,
+      expiresAt
+    });
+  }
+
+  return {
+    ok: true,
+    value: {
+      items: normalized
+    }
+  };
+}
+
+async function writeJsonAtomic(file, value) {
+  const tempFile = `${file}.${process.pid}.${Date.now()}.tmp`;
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(tempFile, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  await fs.rename(tempFile, file);
+}
+
+function stringField(value, maxLength) {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function dateField(value) {
+  const text = stringField(value, 80);
+  if (!text) return null;
+  return Number.isNaN(Date.parse(text)) ? null : new Date(text).toISOString();
+}
+
+function urlField(value) {
+  const text = stringField(value, 300);
+  if (!text) return null;
+
+  try {
+    const url = new URL(text);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function stableAnnouncementId(title, body) {
+  return `${title}:${body}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 80);
 }
 
 function shouldForwardResponseHeader(header) {
@@ -217,7 +474,12 @@ if (require.main === module) {
 
 module.exports = {
   buildServer,
+  hasAdminAccess,
+  buildMinecraftStatusRequest,
+  encodeVarInt,
   mapTargetUrl,
+  normalizeAnnouncementsPayload,
   parseMapRequestHeaders,
+  parseMinecraftStatusResponse,
   resolveInside
 };

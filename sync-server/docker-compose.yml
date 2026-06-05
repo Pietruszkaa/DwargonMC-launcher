@@ -1,0 +1,36 @@
+services:
+  sync-server:
+    image: node:22-alpine
+    container_name: dwargonmc-sync-server
+    restart: unless-stopped
+    working_dir: /data
+    ports:
+      - "2121:2121"
+    environment:
+      PORT: "2121"
+      BIND_HOST: "0.0.0.0"
+      PUBLIC_URL: "https://dwargonmc-sync.petershub.xyz"
+      MAP_TARGET: "http://host.docker.internal:8888"
+      MC_HOST: "host.docker.internal"
+      MC_PORT: "25565"
+      ADMIN_TOKEN: "change-me"
+      MAP_ACCESS_CLIENT_ID: ""
+      MAP_ACCESS_CLIENT_SECRET: ""
+      MAP_REQUEST_HEADERS: ""
+    volumes:
+      - ./:/data
+      - node-modules:/data/node_modules
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        npm ci --omit=dev
+        mkdir -p files backgrounds
+        [ -f announcements.json ] || printf '{"items":[]}\n' > announcements.json
+        exec node server.js /data
+
+volumes:
+  node-modules: null

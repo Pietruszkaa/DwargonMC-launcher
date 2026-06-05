@@ -8,10 +8,11 @@ import { reinstallCore, type ReinstallCoreResult } from './core';
 import { checkJava } from './java';
 import { launchGame, type LaunchStatus } from './game';
 import { loginMicrosoft, refreshMicrosoft, type MclcAuthorization } from './microsoftAuth';
+import { checkModrinthAddonUpdates, installModrinthProject, searchModrinth, type ModrinthInstallRequest, type ModrinthSearchRequest } from './modrinth';
 import { ensureLauncherDirs, getLauncherPaths, type LauncherPaths } from './paths';
 import { getRamInfo } from './ram';
 import { resolveSetupPaths, type SetupState } from './setup';
-import { listManagedLocalFiles, runSync, type ManagedFile, type SyncStatus } from './sync';
+import { listManagedLocalFiles, listPlayerAddonFiles, runSync, type ManagedFile, type PlayerAddonFile, type PlayerAddonKind, type SyncStatus } from './sync';
 import {
   readProfile,
   readSettings,
@@ -41,6 +42,7 @@ type LauncherState = {
   launch: LaunchStatus;
   logs: string[];
   managedFiles: ManagedFile[];
+  playerAddons: PlayerAddonFile[];
   backgrounds: string[];
   announcements: AnnouncementsStatus;
   update: UpdateStatus;
@@ -103,6 +105,7 @@ async function createWindow(): Promise<void> {
     launch: { running: false, phase: 'idle', message: 'Gotowy.' },
     logs: [],
     managedFiles: await listManagedLocalFiles(paths.minecraftDir),
+    playerAddons: await listPlayerAddonFiles(paths.minecraftDir),
     backgrounds: await listBackgroundUrls(paths),
     announcements: await getAnnouncements(paths, settings.backendUrl),
     update: idleUpdateStatus(app.getVersion()),
@@ -207,6 +210,24 @@ function registerIpc(): void {
 
   ipcMain.handle('launcher:refresh-announcements', () => refreshAnnouncements());
 
+  ipcMain.handle('launcher:search-modrinth', async (_event, request: ModrinthSearchRequest) => {
+    return searchModrinth(request, app.getVersion());
+  });
+
+  ipcMain.handle('launcher:install-modrinth', async (_event, request: ModrinthInstallRequest) => {
+    const result = await installModrinthProject(paths, request, app.getVersion());
+    appendLog(result.message);
+    state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
+    emitState();
+    return result;
+  });
+
+  ipcMain.handle('launcher:check-addon-updates', async () => {
+    state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
+    emitState();
+    return checkModrinthAddonUpdates(state.playerAddons, app.getVersion());
+  });
+
   ipcMain.handle('launcher:open-update-download', async () => {
     const target = state.update.downloadUrl ?? state.update.releaseUrl;
     if (target) await shell.openExternal(target);
@@ -293,8 +314,24 @@ function registerIpc(): void {
     return state.managedFiles;
   });
 
+  ipcMain.handle('launcher:list-player-addons', async () => {
+    state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
+    emitState();
+    return state.playerAddons;
+  });
+
   ipcMain.handle('launcher:open-minecraft-folder', async () => {
     await shell.openPath(paths.minecraftDir);
+  });
+
+  ipcMain.handle('launcher:open-addon-folder', async (_event, kind: PlayerAddonKind) => {
+    const folder =
+      kind === 'shader'
+        ? path.join(paths.minecraftDir, 'shaderpacks')
+        : kind === 'resourcepack'
+          ? path.join(paths.minecraftDir, 'resourcepacks')
+          : path.join(paths.minecraftDir, 'mods');
+    await shell.openPath(folder);
   });
 
   ipcMain.handle('launcher:choose-java-path', async () => {
@@ -334,6 +371,7 @@ async function performStartupSync(): Promise<SyncStatus> {
     emitState();
   });
   state.managedFiles = await listManagedLocalFiles(paths.minecraftDir);
+  state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
   state.backgrounds = await listBackgroundUrls(paths);
   emitState();
   return state.sync;
