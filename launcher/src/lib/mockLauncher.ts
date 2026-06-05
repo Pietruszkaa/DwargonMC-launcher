@@ -12,9 +12,12 @@ const settings: LauncherSettings = {
   backendUrl: 'https://dwargonmc-sync.petershub.xyz',
   ramMb: 4096,
   closeOnLaunch: false,
+  windowCloseBehavior: 'ask',
   autoConnect: true,
   showLogs: true,
   javaPath: '',
+  jvmArgs: '',
+  minecraftArgs: '',
   language: 'pl'
 };
 
@@ -286,7 +289,14 @@ export function getLauncherApi(): LauncherApi {
       emitState();
       return state.system.java;
     },
-    async openJavaDownload() {
+    async downloadJavaInstaller() {
+      return {
+        started: true,
+        path: '/mock/jdk-21_windows-x64_bin.exe',
+        message: 'Mock: uruchomiono instalator Java 21.'
+      };
+    },
+    async openJavaDownloadPage() {
       return undefined;
     },
     async reinstallCore() {
@@ -324,6 +334,31 @@ export function getLauncherApi(): LauncherApi {
     },
     async listPlayerAddons() {
       return state.playerAddons;
+    },
+    async readMinecraftOptions() {
+      return {
+        exists: true,
+        path: '/mock/minecraft/options.txt',
+        updatedAt: new Date().toISOString(),
+        values: {
+          autoJump: 'false',
+          fov: '0.0',
+          guiScale: '3',
+          renderDistance: '12',
+          simulationDistance: '8',
+          particles: '1',
+          'key_key.jump': 'key.keyboard.space',
+          'key_key.inventory': 'key.keyboard.e'
+        }
+      };
+    },
+    async saveMinecraftOptions(values) {
+      return {
+        exists: true,
+        path: '/mock/minecraft/options.txt',
+        updatedAt: new Date().toISOString(),
+        values
+      };
     },
     async openMinecraftFolder() {
       return undefined;

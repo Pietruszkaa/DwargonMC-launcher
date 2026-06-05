@@ -3,10 +3,11 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getAnnouncements, type AnnouncementsStatus } from './announcements';
 import { BACKGROUND_PROTOCOL, listBackgroundUrls, resolveBackgroundRequest } from './backgrounds';
-import { CRASH_LOG_LINES, MAX_LOG_LINES } from './constants';
+import { CRASH_LOG_LINES, LAUNCHER_NAME, MAX_LOG_LINES } from './constants';
 import { reinstallCore, type ReinstallCoreResult } from './core';
-import { checkJava, javaDownloadUrl } from './java';
+import { checkJava, downloadJavaInstaller, javaDownloadPageUrl } from './java';
 import { launchGame, type LaunchStatus } from './game';
+import { readMinecraftOptions, saveMinecraftOptions } from './minecraftOptions';
 import { loginMicrosoft, refreshMicrosoft, type MclcAuthorization } from './microsoftAuth';
 import { checkModrinthAddonUpdates, installModrinthProject, listInstalledModrinthProjects, searchModrinth, type ModrinthInstallRequest, type ModrinthSearchRequest } from './modrinth';
 import { ensureLauncherDirs, getLauncherPaths, type LauncherPaths } from './paths';
@@ -71,6 +72,7 @@ let playSessionTickTimer: NodeJS.Timeout | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 let restoreAfterGameClose = false;
+let closeChoicePending = false;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -129,7 +131,7 @@ async function createWindow(): Promise<void> {
     height: 760,
     minWidth: 980,
     minHeight: 640,
-    title: 'DwargonMC Launcher',
+    title: LAUNCHER_NAME,
     frame: false,
     autoHideMenuBar: true,
     backgroundColor: '#101014',
@@ -142,7 +144,7 @@ async function createWindow(): Promise<void> {
   mainWindow.on('close', (event) => {
     if (isQuitting) return;
     event.preventDefault();
-    hideToTray(false);
+    void handleMainWindowClose();
   });
   createTray();
 
@@ -263,8 +265,22 @@ function registerIpc(): void {
     return state.system.java;
   });
 
-  ipcMain.handle('launcher:open-java-download', async () => {
-    await shell.openExternal(javaDownloadUrl());
+  ipcMain.handle('launcher:download-java-installer', async () => {
+    const result = await downloadJavaInstaller(paths.launcherDataDir);
+    if (result.path) {
+      await shell.openPath(result.path);
+    } else {
+      await shell.openExternal(javaDownloadPageUrl());
+    }
+    appendLog(result.message);
+    return {
+      ...result,
+      started: Boolean(result.path)
+    };
+  });
+
+  ipcMain.handle('launcher:open-java-download-page', async () => {
+    await shell.openExternal(javaDownloadPageUrl());
   });
 
   ipcMain.handle('launcher:reinstall-core', async (): Promise<ReinstallCoreResult> => {
@@ -293,6 +309,14 @@ function registerIpc(): void {
     state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
     emitState();
     return state.playerAddons;
+  });
+
+  ipcMain.handle('launcher:read-minecraft-options', async () => {
+    return readMinecraftOptions(paths);
+  });
+
+  ipcMain.handle('launcher:save-minecraft-options', async (_event, values: Record<string, string>) => {
+    return saveMinecraftOptions(paths, values);
   });
 
   ipcMain.handle('launcher:open-minecraft-folder', async () => {
@@ -591,7 +615,7 @@ function createTray(): void {
   if (tray) return;
 
   tray = new Tray(path.join(paths.bundledAssetsDir, 'icon.png'));
-  tray.setToolTip('DwargonMC Launcher');
+  tray.setToolTip(LAUNCHER_NAME);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
@@ -644,6 +668,51 @@ function hideToTray(restoreAfterGame: boolean): void {
   if (!mainWindow) return;
   restoreAfterGameClose = restoreAfterGameClose || restoreAfterGame;
   mainWindow.hide();
+}
+
+async function handleMainWindowClose(): Promise<void> {
+  if (!mainWindow || closeChoicePending) return;
+
+  if (state.settings.windowCloseBehavior === 'tray') {
+    hideToTray(false);
+    return;
+  }
+
+  if (state.settings.windowCloseBehavior === 'exit') {
+    isQuitting = true;
+    app.quit();
+    return;
+  }
+
+  closeChoicePending = true;
+  try {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Schowaj do tray', 'Zamknij launcher', 'Anuluj'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+      title: 'Zamykanie launchera',
+      message: 'Co zrobić po kliknięciu zamknięcia?',
+      detail: 'Launcher może schować się do tray i działać w tle albo zamknąć się całkowicie. Ten wybór możesz później zmienić w ustawieniach launchera.'
+    });
+
+    if (result.response === 0) {
+      state.settings = await saveSettings(paths, { ...state.settings, windowCloseBehavior: 'tray' });
+      emitState();
+      hideToTray(false);
+      return;
+    }
+
+    if (result.response === 1) {
+      state.settings = await saveSettings(paths, { ...state.settings, windowCloseBehavior: 'exit' });
+      emitState();
+      isQuitting = true;
+      app.quit();
+    }
+  } finally {
+    closeChoicePending = false;
+  }
 }
 
 function showMainWindow(): void {

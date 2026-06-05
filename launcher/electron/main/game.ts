@@ -96,6 +96,11 @@ export async function launchGame(
       : undefined,
     javaPath
   };
+  const customArgs = splitLaunchArgs(settings.jvmArgs);
+  const customLaunchArgs = splitLaunchArgs(settings.minecraftArgs);
+
+  if (customArgs.length > 0) options.customArgs = customArgs;
+  if (customLaunchArgs.length > 0) options.customLaunchArgs = customLaunchArgs;
 
   events.onStatus({ running: true, phase: 'launching', message: 'Uruchamianie Minecraft...' });
   await launcher.launch(options);
@@ -181,6 +186,53 @@ export function minecraftDownloadMessage(progress: unknown): string {
   const label = file || task;
 
   return label ? `Pobieranie Minecraft: ${label}${count}` : `Pobieranie plików Minecraft${count}...`;
+}
+
+export function splitLaunchArgs(value: string): string[] {
+  const args: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  let escaping = false;
+
+  for (const char of value.trim()) {
+    if (escaping) {
+      current += char;
+      escaping = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaping = true;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current) {
+        args.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current) args.push(current);
+  return args;
 }
 
 export async function purgeStaleForgeMetadata(minecraftDir: string, desiredNeoForgeVersion: string, events?: GameEvents): Promise<boolean> {

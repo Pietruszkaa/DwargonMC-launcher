@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "minecraftVersion": "1.21.1",
+  "source": "https://minecraft.wiki/w/Options.txt",
+  "notes": "Szkielet schemy options.txt dla Minecraft Java Edition. Launcher zachowuje opcje spoza schemy. Przed pokazaniem graczom warto jeszcze przefiltrować ustawienia techniczne i zostawić tylko potrzebne.",
+  "categories": [
+    {
+      "id": "video",
+      "label": "Grafika",
+      "description": "Ustawienia obrazu, jakości i wydajności.",
+      "entries": [
+        { "key": "graphicsMode", "label": "Jakość grafiki", "type": "enum", "default": "1", "options": [{ "value": "0", "label": "Szybka" }, { "value": "1", "label": "Ładna" }, { "value": "2", "label": "Fantastyczna" }] },
+        { "key": "renderDistance", "label": "Odległość renderowania", "type": "integer", "default": "12", "min": 2, "max": 32, "step": 1, "unit": "chunki" },
+        { "key": "simulationDistance", "label": "Odległość symulacji", "type": "integer", "default": "12", "min": 5, "max": 32, "step": 1, "unit": "chunki" },
+        { "key": "entityDistanceScaling", "label": "Odległość renderowania bytów", "type": "decimal", "default": "1.0", "min": 0.5, "max": 5, "step": 0.1 },
+        { "key": "maxFps", "label": "Max FPS", "type": "integer", "default": "120", "min": 10, "max": 260, "step": 5 },
+        { "key": "enableVsync", "label": "VSync", "type": "boolean", "default": "true" },
+        { "key": "fullscreen", "label": "Pełny ekran", "type": "boolean", "default": "false" },
+        { "key": "guiScale", "label": "Skala interfejsu", "type": "integer", "default": "0", "min": 0, "max": 8, "step": 1, "options": [{ "value": "0", "label": "Auto" }, { "value": "1", "label": "1x" }, { "value": "2", "label": "2x" }, { "value": "3", "label": "3x" }, { "value": "4", "label": "4x" }, { "value": "5", "label": "5x" }, { "value": "6", "label": "6x" }, { "value": "7", "label": "7x" }, { "value": "8", "label": "8x" }] },
+        { "key": "fov", "label": "Pole widzenia", "type": "decimal", "default": "0.0", "min": -1, "max": 1, "step": 0.05 },
+        { "key": "gamma", "label": "Jasność", "type": "decimal", "default": "0.5", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "particles", "label": "Cząsteczki", "type": "enum", "default": "0", "options": [{ "value": "0", "label": "Wszystkie" }, { "value": "1", "label": "Zmniejszone" }, { "value": "2", "label": "Minimalne" }] },
+        { "key": "ao", "label": "Gładkie oświetlenie", "type": "boolean", "default": "true" },
+        { "key": "biomeBlendRadius", "label": "Mieszanie biomów", "type": "integer", "default": "2", "min": 0, "max": 7, "step": 1 },
+        { "key": "renderClouds", "label": "Chmury", "type": "enum", "default": "true", "options": [{ "value": "true", "label": "Ładne" }, { "value": "fast", "label": "Szybkie" }, { "value": "false", "label": "Wyłączone" }] },
+        { "key": "mipmapLevels", "label": "Poziomy mipmap", "type": "integer", "default": "4", "min": 0, "max": 4, "step": 1 },
+        { "key": "entityShadows", "label": "Cienie bytów", "type": "boolean", "default": "true" },
+        { "key": "bobView", "label": "Kołysanie kamery", "type": "boolean", "default": "true" },
+        { "key": "screenEffectScale", "label": "Efekty zniekształcenia", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "fovEffectScale", "label": "Efekty pola widzenia", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "darknessEffectScale", "label": "Pulsowanie ciemności", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "hideLightningFlashes", "label": "Ukryj błyski piorunów", "type": "boolean", "default": "false" },
+        { "key": "showAutosaveIndicator", "label": "Wskaźnik autozapisu", "type": "boolean", "default": "true" },
+        { "key": "darkMojangStudiosBackground", "label": "Ciemne tło Mojang", "type": "boolean", "default": "false" },
+        { "key": "glintSpeed", "label": "Szybkość połysku", "type": "decimal", "default": "0.5", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "glintStrength", "label": "Siła połysku", "type": "decimal", "default": "0.75", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "damageTiltStrength", "label": "Siła przechylenia po obrażeniach", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "highContrast", "label": "Wysoki kontrast", "type": "boolean", "default": "false" },
+        { "key": "panoramaScrollSpeed", "label": "Szybkość panoramy menu", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "menuBackgroundBlurriness", "label": "Rozmycie tła menu", "type": "integer", "default": "5", "min": 0, "max": 10, "step": 1 }
+      ]
+    },
+    {
+      "id": "controls_general",
+      "label": "Sterowanie",
+      "description": "Mysz, poruszanie i podstawowe ustawienia sterowania.",
+      "entries": [
+        { "key": "mouseSensitivity", "label": "Czułość myszy", "type": "decimal", "default": "0.5", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "mouseWheelSensitivity", "label": "Czułość rolki myszy", "type": "decimal", "default": "1.0", "min": 1, "max": 10, "step": 0.1 },
+        { "key": "invertYMouse", "label": "Odwróć oś Y myszy", "type": "boolean", "default": "false" },
+        { "key": "autoJump", "label": "Automatyczny skok", "type": "boolean", "default": "false" },
+        { "key": "toggleCrouch", "label": "Przełączalne kucanie", "type": "boolean", "default": "false" },
+        { "key": "toggleSprint", "label": "Przełączalny sprint", "type": "boolean", "default": "false" },
+        { "key": "mainHand", "label": "Główna ręka", "type": "enum", "default": "right", "options": [{ "value": "right", "label": "Prawa" }, { "value": "left", "label": "Lewa" }] },
+        { "key": "attackIndicator", "label": "Wskaźnik ataku", "type": "enum", "default": "1", "options": [{ "value": "0", "label": "Wyłączony" }, { "value": "1", "label": "Celownik" }, { "value": "2", "label": "Pasek skrótów" }] }
+      ]
+    },
+    {
+      "id": "chat",
+      "label": "Chat",
+      "description": "Widoczność, linki, rozmiar i tło chatu.",
+      "entries": [
+        { "key": "chatVisibility", "label": "Widoczność chatu", "type": "enum", "default": "0", "options": [{ "value": "0", "label": "Pokazany" }, { "value": "1", "label": "Tylko komendy" }, { "value": "2", "label": "Ukryty" }] },
+        { "key": "chatColors", "label": "Kolory chatu", "type": "boolean", "default": "true" },
+        { "key": "chatLinks", "label": "Linki w chacie", "type": "boolean", "default": "true" },
+        { "key": "chatLinksPrompt", "label": "Potwierdzaj linki", "type": "boolean", "default": "true" },
+        { "key": "autoSuggestions", "label": "Sugestie komend", "type": "boolean", "default": "true" },
+        { "key": "chatOpacity", "label": "Przezroczystość chatu", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "chatLineSpacing", "label": "Odstęp linii chatu", "type": "decimal", "default": "0.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "chatScale", "label": "Skala chatu", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "chatWidth", "label": "Szerokość chatu", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "chatHeightFocused", "label": "Wysokość aktywnego chatu", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "chatHeightUnfocused", "label": "Wysokość nieaktywnego chatu", "type": "decimal", "default": "0.4375", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "chatDelay", "label": "Opóźnienie chatu", "type": "decimal", "default": "0.0", "min": 0, "max": 6, "step": 0.1 },
+        { "key": "textBackgroundOpacity", "label": "Przezroczystość tła tekstu", "type": "decimal", "default": "0.5", "min": 0, "max": 1, "step": 0.01 }
+      ]
+    },
+    {
+      "id": "accessibility",
+      "label": "Dostępność",
+      "description": "Narrator, napisy, czcionka i informacje pomocnicze.",
+      "entries": [
+        { "key": "showSubtitles", "label": "Napisy", "type": "boolean", "default": "false" },
+        { "key": "forceUnicodeFont", "label": "Wymuś czcionkę Unicode", "type": "boolean", "default": "false" },
+        { "key": "advancedItemTooltips", "label": "Zaawansowane opisy przedmiotów", "type": "boolean", "default": "false" },
+        { "key": "directionalAudio", "label": "Dźwięk kierunkowy", "type": "boolean", "default": "false" }
+      ]
+    },
+    {
+      "id": "sound",
+      "label": "Dźwięk",
+      "description": "Głośność główna, kategorie dźwięków i urządzenie wyjściowe.",
+      "entries": [
+        { "key": "soundCategory_master", "label": "Głośność główna", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "soundCategory_music", "label": "Muzyka", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "soundCategory_record", "label": "Jukebox i bloki nutowe", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "soundCategory_weather", "label": "Pogoda", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "soundCategory_block", "label": "Bloki", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "soundCategory_hostile", "label": "Wrogie moby", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "soundCategory_neutral", "label": "Neutralne moby", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "soundCategory_player", "label": "Gracze", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "soundCategory_ambient", "label": "Otoczenie", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 },
+        { "key": "soundCategory_voice", "label": "Głosy", "type": "decimal", "default": "1.0", "min": 0, "max": 1, "step": 0.01 }
+      ]
+    },
+    {
+      "id": "social_multiplayer",
+      "label": "Multiplayer",
+      "entries": [
+        { "key": "realmsNotifications", "label": "Powiadomienia Realms", "type": "boolean", "default": "true" },
+        { "key": "skipMultiplayerWarning", "label": "Pomiń ostrzeżenie multiplayer", "type": "boolean", "default": "false" },
+        { "key": "allowServerListing", "label": "Pokazuj gracza na liście serwerów", "type": "boolean", "default": "true" }
+      ]
+    },
+    {
+      "id": "skin",
+      "label": "Skórka",
+      "description": "Widoczność warstw skórki gracza.",
+      "entries": [
+        { "key": "modelPart_cape", "label": "Peleryna", "type": "boolean", "default": "true" },
+        { "key": "modelPart_jacket", "label": "Kurtka", "type": "boolean", "default": "true" },
+        { "key": "modelPart_left_sleeve", "label": "Lewy rękaw", "type": "boolean", "default": "true" },
+        { "key": "modelPart_right_sleeve", "label": "Prawy rękaw", "type": "boolean", "default": "true" },
+        { "key": "modelPart_left_pants_leg", "label": "Lewa nogawka", "type": "boolean", "default": "true" },
+        { "key": "modelPart_right_pants_leg", "label": "Prawa nogawka", "type": "boolean", "default": "true" },
+        { "key": "modelPart_hat", "label": "Czapka", "type": "boolean", "default": "true" }
+      ]
+    },
+    {
+      "id": "system",
+      "label": "Inne / techniczne",
+      "entries": [
+        { "key": "lang", "label": "Język gry", "type": "string", "default": "en_us" },
+        { "key": "pauseOnLostFocus", "label": "Pauza po utracie focusu", "type": "boolean", "default": "true" },
+        { "key": "japaneseGlyphVariants", "label": "Japońskie warianty glifów", "type": "boolean", "default": "false" },
+        { "key": "operatorItemsTab", "label": "Zakładka przedmiotów operatora", "type": "boolean", "default": "false" },
+        { "key": "hideSplashTexts", "label": "Ukryj teksty splash", "type": "boolean", "default": "false" }
+      ]
+    }
+  ]
+}

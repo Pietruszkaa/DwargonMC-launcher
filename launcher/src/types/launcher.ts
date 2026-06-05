@@ -31,9 +31,12 @@ export type LauncherSettings = {
   backendUrl: string;
   ramMb: number;
   closeOnLaunch: boolean;
+  windowCloseBehavior: 'ask' | 'tray' | 'exit';
   autoConnect: boolean;
   showLogs: boolean;
   javaPath: string;
+  jvmArgs: string;
+  minecraftArgs: string;
   language: Language;
 };
 
@@ -169,6 +172,12 @@ export type ReinstallCoreResult = {
   message: string;
 };
 
+export type JavaInstallerResult = {
+  started: boolean;
+  path: string | null;
+  message: string;
+};
+
 export type ModrinthProjectType = 'mod' | 'resourcepack' | 'shader';
 export type ModrinthSort = 'relevance' | 'downloads' | 'updated' | 'newest';
 
@@ -230,6 +239,13 @@ export type RemovePlayerAddonResult = {
   message: string;
 };
 
+export type MinecraftOptionsState = {
+  exists: boolean;
+  path: string;
+  values: Record<string, string>;
+  updatedAt: string | null;
+};
+
 export type LauncherApi = {
   getState(): Promise<LauncherState>;
   saveSettings(settings: LauncherSettings): Promise<LauncherSettings>;
@@ -247,11 +263,14 @@ export type LauncherApi = {
   checkUpdate(): Promise<UpdateStatus>;
   openUpdateDownload(): Promise<void>;
   refreshJava(): Promise<JavaCheckResult>;
-  openJavaDownload(): Promise<void>;
+  downloadJavaInstaller(): Promise<JavaInstallerResult>;
+  openJavaDownloadPage(): Promise<void>;
   reinstallCore(): Promise<ReinstallCoreResult>;
   launchGame(request: LaunchRequest): Promise<LaunchStatus>;
   listManagedFiles(): Promise<ManagedFile[]>;
   listPlayerAddons(): Promise<PlayerAddonFile[]>;
+  readMinecraftOptions(): Promise<MinecraftOptionsState>;
+  saveMinecraftOptions(values: Record<string, string>): Promise<MinecraftOptionsState>;
   openMinecraftFolder(): Promise<void>;
   openAddonFolder(kind: PlayerAddonKind): Promise<void>;
   chooseJavaPath(): Promise<string | null>;

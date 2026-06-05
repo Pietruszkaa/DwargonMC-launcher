@@ -1,10 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type UIEvent } from 'react';
 import { Modal } from '~components/Modal';
+import { branding, brandingStyle } from '@/lib/branding';
+import minecraftOptionsSchema from '@/lib/minecraft-options.schema.json';
 import { getLauncherApi } from '@/lib/mockLauncher';
 import { t } from '@/lib/i18n';
-import type { Announcement, CrashInfo, InstalledModrinthProject, LauncherSettings, LauncherState, ModrinthAddonUpdate, ModrinthProject, ModrinthProjectType, ModrinthSort } from '@/types/launcher';
+import type { Announcement, CrashInfo, InstalledModrinthProject, LauncherSettings, LauncherState, MinecraftOptionsState, ModrinthAddonUpdate, ModrinthProject, ModrinthProjectType, ModrinthSort } from '@/types/launcher';
 
 type Popup = 'settings' | 'files' | 'map' | 'logs' | 'modrinth' | null;
+type LogFilter = 'all' | 'launcher' | 'sync' | 'minecraft' | 'error';
+type SettingsCategory = 'launcher' | 'arguments' | 'mc-options';
+type McOptionEntry = {
+  key: string;
+  label: string;
+  type: 'boolean' | 'integer' | 'decimal' | 'enum' | 'string' | 'keybind';
+  default?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  restartRequired?: boolean;
+  notes?: string;
+  options?: Array<{ value: string; label: string }>;
+};
+type McOptionCategory = {
+  id: string;
+  label: string;
+  description?: string;
+  entries: McOptionEntry[];
+};
 
 const api = getLauncherApi();
 const MODRINTH_PAGE_SIZE = 20;
@@ -21,6 +44,8 @@ export function App(): JSX.Element {
   const [accountPromptDismissed, setAccountPromptDismissed] = useState(false);
   const [javaPromptDismissed, setJavaPromptDismissed] = useState(false);
   const [timeTick, setTimeTick] = useState(() => Date.now());
+  const [mapAvailable, setMapAvailable] = useState(false);
+  const [activeSettingsCategory, setActiveSettingsCategory] = useState<SettingsCategory>('launcher');
 
   useEffect(() => {
     void api.getState().then((next) => {
@@ -68,6 +93,68 @@ export function App(): JSX.Element {
     return () => window.clearInterval(timer);
   }, [state?.launch.running, state?.profile.lastPlayedAt]);
 
+  useEffect(() => {
+    if (!state?.health.ok) {
+      setMapAvailable(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 3500);
+
+    fetch(`${state.settings.backendUrl}/map/`, {
+      headers: { Accept: 'text/html,application/xhtml+xml' },
+      signal: controller.signal
+    })
+      .then((response) => setMapAvailable(response.ok))
+      .catch(() => setMapAvailable(false))
+      .finally(() => window.clearTimeout(timer));
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [state?.health.ok, state?.settings.backendUrl]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        if (crash) {
+          setCrash(null);
+          return;
+        }
+        if (mapFullscreen) {
+          setMapFullscreen(false);
+          return;
+        }
+        if (popup) {
+          setPopup(null);
+        }
+        return;
+      }
+
+      if (!event.ctrlKey && !event.metaKey) return;
+
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
+
+      const key = event.key.toLowerCase();
+      if (key === ',') {
+        event.preventDefault();
+        setPopup('settings');
+      } else if (key === 'l') {
+        event.preventDefault();
+        setPopup('logs');
+      } else if (key === 'm') {
+        event.preventDefault();
+        setPopup('modrinth');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [crash, mapFullscreen, popup]);
+
   const handlePlay = useCallback(async () => {
     await api.launchGame({ nickname });
   }, [nickname]);
@@ -85,13 +172,14 @@ export function App(): JSX.Element {
   }, []);
 
   if (!state) {
-    return <div className="boot">DwargonMC Launcher</div>;
+    return <div className="boot">{branding.launcherName}</div>;
   }
 
   const syncPercent =
     state.sync.totalFiles > 0 ? Math.round((state.sync.completedFiles / state.sync.totalFiles) * 100) : 0;
   const isNickValid = /^[A-Za-z0-9_]{3,16}$/.test(nickname);
   const syncLabel = getSyncLabel(state.sync);
+  const settingsOpen = popup === 'settings';
   const showUpdatePrompt = state.update.available && !updateDismissed;
   const showAccountPrompt = !accountPromptDismissed && state.profile.accountMode === 'offline' && !state.profile.nickname;
   const showJavaPrompt =
@@ -108,7 +196,7 @@ export function App(): JSX.Element {
   }
 
   return (
-    <main className="shell">
+    <main className="shell" style={brandingStyle as CSSProperties}>
       <div className="background-layer" aria-hidden="true">
         {state.backgrounds.map((background, index) => (
           <span
@@ -157,28 +245,49 @@ export function App(): JSX.Element {
 
       <div className="launcher-container">
         <aside className="sidebar">
-          <h1 className="logo">DwargonMC</h1>
+          <h1 className="logo">{branding.serverName}</h1>
 
-          <nav className="main-menu" aria-label="Launcher actions">
-            <button className="menu-btn active" type="button" disabled={!isNickValid || state.launch.running} onClick={handlePlay}>
-              {copy.play}
-            </button>
-            <button className="menu-btn" type="button" onClick={() => setPopup('settings')}>
-              {copy.settings}
-            </button>
-            <button className="menu-btn" type="button" onClick={() => setPopup('logs')}>
-              {copy.logs}
-            </button>
-            <button className="menu-btn" type="button" onClick={() => setPopup('modrinth')}>
-              Dodatki
-            </button>
+          <nav className="main-menu" aria-label={settingsOpen ? 'Kategorie ustawień' : 'Launcher actions'}>
+            {settingsOpen ? (
+              <>
+                <button className="menu-btn back" type="button" onClick={() => setPopup(null)}>
+                  Back
+                </button>
+                <button className={activeSettingsCategory === 'launcher' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('launcher')}>
+                  Launcher
+                </button>
+                <button className={activeSettingsCategory === 'arguments' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('arguments')}>
+                  Argumenty MC
+                </button>
+                <button className={activeSettingsCategory === 'mc-options' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('mc-options')}>
+                  Ustawienia MC
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="menu-btn active" type="button" disabled={!isNickValid || state.launch.running} onClick={handlePlay}>
+                  {copy.play}
+                </button>
+                <button className="menu-btn" type="button" onClick={() => setPopup('settings')}>
+                  {copy.settings}
+                </button>
+                <button className="menu-btn" type="button" onClick={() => setPopup('logs')}>
+                  {copy.logs}
+                </button>
+                <button className="menu-btn" type="button" onClick={() => setPopup('modrinth')}>
+                  Dodatki
+                </button>
+              </>
+            )}
             <div className="spacer" />
-            <PreflightPanel state={state} />
-            <div className="sidebar-stats">
-              <span>Ostatnia sesja</span>
-              <strong>{formatLastSessionClose(state.profile.lastPlayedAt, timeTick)}</strong>
-              <span>Łączny czas gry</span>
-              <strong>{formatDuration(state.profile.totalPlaySeconds)}</strong>
+            <div className="sidebar-status">
+              <PreflightPanel state={state} />
+              <div className="sidebar-stats">
+                <span>Ostatnia sesja</span>
+                <strong>{formatLastSessionClose(state.profile.lastPlayedAt, timeTick)}</strong>
+                <span>Łączny czas gry</span>
+                <strong>{formatDuration(state.profile.totalPlaySeconds)}</strong>
+              </div>
             </div>
             <button className="icon-btn" type="button" onClick={() => void api.openMinecraftFolder()} title="Pliki gry">
               Pliki gry
@@ -188,7 +297,9 @@ export function App(): JSX.Element {
 
         <section className="content-area">
           <aside className="right-rail">
-            {state.health.ok && <MapPanel backendUrl={state.settings.backendUrl} onToggle={() => setMapFullscreen(true)} />}
+            {state.health.ok && mapAvailable && (
+              <MapPanel backendUrl={state.settings.backendUrl} onToggle={() => setMapFullscreen(true)} />
+            )}
 
             <div className="right-stack">
               <section className="players-panel">
@@ -203,7 +314,11 @@ export function App(): JSX.Element {
             </div>
           </aside>
 
-          <AnnouncementsPanel items={state.announcements.items} cached={state.announcements.cached} error={state.announcements.error} />
+          {settingsOpen ? (
+            <SettingsWorkspace state={state} activeCategory={activeSettingsCategory} />
+          ) : (
+            <AnnouncementsPanel items={state.announcements.items} cached={state.announcements.cached} error={state.announcements.error} />
+          )}
 
           {state.settings.showLogs && (
             <section className={`inline-logs ${logsExpanded ? 'inline-logs-expanded' : ''}`}>
@@ -219,13 +334,12 @@ export function App(): JSX.Element {
         </section>
       </div>
 
-      {mapFullscreen && state.health.ok && (
+      {mapFullscreen && state.health.ok && mapAvailable && (
         <div className="map-overlay">
           <MapPanel backendUrl={state.settings.backendUrl} fullscreen onToggle={() => setMapFullscreen(false)} />
         </div>
       )}
 
-      {popup === 'settings' && <SettingsModal state={state} onClose={() => setPopup(null)} />}
       {popup === 'files' && <FilesModal state={state} onClose={() => setPopup(null)} />}
       {popup === 'map' && <MapModal backendUrl={state.settings.backendUrl} onClose={() => setPopup(null)} />}
       {popup === 'logs' && <LogsModal logs={state.logs} onClose={() => setPopup(null)} />}
@@ -312,7 +426,7 @@ function SetupWizard({
 
       <section className="setup-panel" aria-label="Pierwsza konfiguracja">
         <span className="setup-kicker">Pierwsza konfiguracja</span>
-        <h1>DwargonMC Launcher</h1>
+        <h1>{branding.launcherName}</h1>
         {state.setup.reason === 'crowded-folder' ? (
           <p>
             Launcher wykryl, ze plik `.exe` lezy w folderze z innymi plikami. Dane gry zostana utworzone w osobnym
@@ -367,14 +481,14 @@ function MapPanel({
   onToggle: () => void;
 }): JSX.Element {
   return (
-    <section className={`map-panel ${fullscreen ? 'map-panel-fullscreen' : ''}`} aria-label="Mapa serwera">
+    <section className={`map-panel ${fullscreen ? 'map-panel-fullscreen' : ''}`} aria-label={`Mapa ${branding.serverName}`}>
       <header>
         <span>Mapa</span>
         <button type="button" onClick={onToggle}>
           {fullscreen ? 'Zamknij' : 'Fullscreen'}
         </button>
       </header>
-      <iframe title="Mapa DwargonMC" src={`${backendUrl}/map/`} />
+      <iframe title={`Mapa ${branding.serverName}`} src={`${backendUrl}/map/`} />
     </section>
   );
 }
@@ -389,11 +503,18 @@ function getSyncLabel(sync: LauncherState['sync']): string {
 }
 
 function PreflightPanel({ state }: { state: LauncherState }): JSX.Element {
+  const javaVersion = Number(state.system.java.version);
+  const javaKind = !state.system.java.ok ? 'bad' : javaVersion === 21 ? 'good' : 'warn';
+  const javaValue = !state.system.java.ok
+    ? 'Problem'
+    : javaVersion === 21
+      ? 'OK 21'
+      : `Ryzyko ${state.system.java.version ?? ''}`.trim();
   const items = [
     {
       label: 'Java',
-      value: state.system.java.ok ? `OK ${state.system.java.version ?? ''}`.trim() : 'Problem',
-      kind: state.system.java.ok ? 'good' : 'bad'
+      value: javaValue,
+      kind: javaKind
     },
     {
       label: 'RAM',
@@ -485,6 +606,19 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(state.system.java.message);
 
+  const downloadInstaller = async (): Promise<void> => {
+    setBusy(true);
+    setMessage('Pobieranie instalatora Java 21...');
+    try {
+      const result = await api.downloadJavaInstaller();
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Nie udało się pobrać instalatora Java. Użyj trybu ręcznego.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const refresh = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -512,12 +646,15 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
   };
 
   return (
-    <Modal title="Java wymagana" onClose={onClose}>
+    <Modal title="Java 21 zalecana" onClose={onClose}>
       <div className="java-help">
         <p>{message}</p>
         <div className="java-help-actions">
-          <button type="button" onClick={() => void api.openJavaDownload()} disabled={busy}>
-            Pobierz Java 21
+          <button type="button" onClick={downloadInstaller} disabled={busy}>
+            Pobierz instalator
+          </button>
+          <button type="button" onClick={() => void api.openJavaDownloadPage()} disabled={busy}>
+            Strona Oracle
           </button>
           <button type="button" onClick={refresh} disabled={busy}>
             Sprawdź ponownie
@@ -526,22 +663,40 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
             Wskaż ręcznie
           </button>
         </div>
-        <small>Po instalacji uruchom sprawdzenie ponownie. Launcher nie instaluje Javy po cichu i nie zmienia PATH.</small>
+        <small>
+          Automatyczny tryb pobiera oficjalny instalator Oracle JDK 21 i uruchamia go normalnie. Klikaj w instalatorze
+          Next/Install, a po zakończeniu wróć do launchera i użyj „Sprawdź ponownie”. Launcher nie instaluje Javy po cichu.
+        </small>
       </div>
     </Modal>
   );
 }
 
-function SettingsModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {
+function SettingsWorkspace({ state, activeCategory }: { state: LauncherState; activeCategory: SettingsCategory }): JSX.Element {
   const [draft, setDraft] = useState<LauncherSettings>(state.settings);
   const [coreMessage, setCoreMessage] = useState('');
   const [accountMessage, setAccountMessage] = useState('');
   const [accountBusy, setAccountBusy] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState('');
+  const [mcOptions, setMcOptions] = useState<MinecraftOptionsState | null>(null);
+  const [mcDraft, setMcDraft] = useState<Record<string, string>>({});
+  const [mcMessage, setMcMessage] = useState('');
+  const [mcGroup, setMcGroup] = useState('video');
   const copy = t(draft.language);
+  const mcCategories = minecraftOptionsSchema.categories as McOptionCategory[];
+  const optionCategories = mcCategories.filter((category) => category.id !== 'controls');
+  const selectedMcCategory = optionCategories.find((category) => category.id === mcGroup) ?? optionCategories[0];
 
   const update = <K extends keyof LauncherSettings>(key: K, value: LauncherSettings[K]): void => {
     setDraft((current) => ({ ...current, [key]: value }));
   };
+
+  useEffect(() => {
+    void api.readMinecraftOptions().then((next) => {
+      setMcOptions(next);
+      setMcDraft(next.values);
+    });
+  }, []);
 
   const chooseJava = async (): Promise<void> => {
     const selected = await api.chooseJavaPath();
@@ -555,8 +710,21 @@ function SettingsModal({ state, onClose }: { state: LauncherState; onClose: () =
   };
 
   const save = async (): Promise<void> => {
-    await api.saveSettings(draft);
-    onClose();
+    const saved = await api.saveSettings(draft);
+    setDraft(saved);
+    setSettingsMessage('Zapisano ustawienia launchera.');
+  };
+
+  const saveMcOptions = async (): Promise<void> => {
+    if (state.launch.running) {
+      setMcMessage('Zamknij Minecraft przed zapisem. Gra zapisuje options.txt przy wyjściu i może nadpisać zmiany.');
+      return;
+    }
+
+    const saved = await api.saveMinecraftOptions(mcDraft);
+    setMcOptions(saved);
+    setMcDraft(saved.values);
+    setMcMessage('Zapisano options.txt. Zmiany zadziałają od następnego uruchomienia gry.');
   };
 
   const handleReinstallCore = async (): Promise<void> => {
@@ -588,89 +756,312 @@ function SettingsModal({ state, onClose }: { state: LauncherState; onClose: () =
   };
 
   return (
-    <Modal title={copy.settings} onClose={onClose}>
-      <div className="settings-grid">
-        <section className="account-box" aria-label="Account mode">
-          <div>
-            <strong>Konto</strong>
-            <p>
-              {state.profile.accountMode === 'microsoft' && state.profile.microsoft
-                ? `Microsoft: ${state.profile.microsoft.name}`
-                : 'Tryb non-premium / offline'}
-            </p>
-          </div>
-          {state.profile.accountMode === 'microsoft' ? (
-            <button type="button" onClick={handleMicrosoftLogout} disabled={accountBusy}>
-              Wyloguj Microsoft
+    <section className="settings-workspace" aria-label={copy.settings}>
+      <header className="settings-workspace-header">
+        <div>
+          <span>Ustawienia</span>
+          <h2>{settingsCategoryTitle(activeCategory)}</h2>
+        </div>
+        <button className="play-button compact" type="button" onClick={activeCategory === 'mc-options' ? saveMcOptions : save}>
+          Zapisz
+        </button>
+      </header>
+
+      {activeCategory === 'launcher' && (
+        <div className="settings-grid settings-section">
+          <section className="account-box" aria-label="Account mode">
+            <div>
+              <strong>Konto</strong>
+              <p>
+                {state.profile.accountMode === 'microsoft' && state.profile.microsoft
+                  ? `Microsoft: ${state.profile.microsoft.name}`
+                  : 'Tryb non-premium / offline'}
+              </p>
+            </div>
+            {state.profile.accountMode === 'microsoft' ? (
+              <button type="button" onClick={handleMicrosoftLogout} disabled={accountBusy}>
+                Wyloguj Microsoft
+              </button>
+            ) : (
+              <button type="button" onClick={handleMicrosoftLogin} disabled={accountBusy}>
+                Zaloguj Microsoft
+              </button>
+            )}
+            {accountMessage && <small>{accountMessage}</small>}
+          </section>
+          <label className="field">
+            <span>{copy.backend}</span>
+            <input value={draft.backendUrl} onChange={(event) => update('backendUrl', event.target.value)} />
+          </label>
+          <label className="field row-field">
+            <input type="checkbox" checked={draft.closeOnLaunch} onChange={(event) => update('closeOnLaunch', event.target.checked)} />
+            <span>{copy.closeOnLaunch}</span>
+          </label>
+          <label className="field">
+            <span>Zamknięcie okna</span>
+            <select
+              value={draft.windowCloseBehavior}
+              onChange={(event) => update('windowCloseBehavior', event.target.value as LauncherSettings['windowCloseBehavior'])}
+            >
+              <option value="ask">Zapytaj przy pierwszym zamknięciu</option>
+              <option value="tray">Schowaj do tray</option>
+              <option value="exit">Zamknij launcher</option>
+            </select>
+            <small>Decyduje co robi przycisk X w prawym górnym rogu. Ten wybór możesz zmienić później.</small>
+          </label>
+          <label className="field row-field">
+            <input type="checkbox" checked={draft.showLogs} onChange={(event) => update('showLogs', event.target.checked)} />
+            <span>{copy.showLogs}</span>
+          </label>
+          <label className="field">
+            <span>{copy.java}</span>
+            <div className="inline-control">
+              <input value={draft.javaPath} onChange={(event) => update('javaPath', event.target.value)} placeholder="PATH / java.exe" />
+              <button type="button" onClick={chooseJava}>{copy.choose}</button>
+            </div>
+            <div className="java-actions">
+              <button type="button" onClick={() => void api.downloadJavaInstaller()}>Pobierz instalator Java 21</button>
+              <button type="button" onClick={() => void api.openJavaDownloadPage()}>Strona Oracle</button>
+              <button type="button" onClick={refreshJava}>Sprawdź ponownie</button>
+            </div>
+            <small>{state.system.java.message}</small>
+          </label>
+          <label className="field">
+            <span>Język / Language</span>
+            <select value={draft.language} onChange={(event) => update('language', event.target.value === 'en' ? 'en' : 'pl')}>
+              <option value="pl">Polski</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <section className="danger-zone" aria-label="Core reinstall">
+            <div>
+              <strong>Reinstall core</strong>
+              <p>Czyści runtime gry, wersje, biblioteki, assety i stare installery NeoForge. Nie rusza modów, configów ani save'ów.</p>
+            </div>
+            <button type="button" onClick={handleReinstallCore} disabled={state.launch.running}>
+              Reinstall core
             </button>
-          ) : (
-            <button type="button" onClick={handleMicrosoftLogin} disabled={accountBusy}>
-              Zaloguj Microsoft
-            </button>
-          )}
-          {accountMessage && <small>{accountMessage}</small>}
-        </section>
-        <label className="field">
-          <span>{copy.backend}</span>
-          <input value={draft.backendUrl} onChange={(event) => update('backendUrl', event.target.value)} />
-        </label>
-        <label className="field">
-          <span>{copy.ram}: {draft.ramMb} MB</span>
-          <input
-            type="range"
-            min={2048}
-            max={state.system.maxRamMb}
-            step={256}
-            value={draft.ramMb}
-            onChange={(event) => update('ramMb', Number(event.target.value))}
-          />
-        </label>
-        <label className="field row-field">
-          <input type="checkbox" checked={draft.closeOnLaunch} onChange={(event) => update('closeOnLaunch', event.target.checked)} />
-          <span>{copy.closeOnLaunch}</span>
-        </label>
-        <label className="field row-field">
-          <input type="checkbox" checked={draft.autoConnect} onChange={(event) => update('autoConnect', event.target.checked)} />
-          <span>{copy.autoConnect}</span>
-        </label>
-        <label className="field row-field">
-          <input type="checkbox" checked={draft.showLogs} onChange={(event) => update('showLogs', event.target.checked)} />
-          <span>{copy.showLogs}</span>
-        </label>
-        <label className="field">
-          <span>{copy.java}</span>
-          <div className="inline-control">
-            <input value={draft.javaPath} onChange={(event) => update('javaPath', event.target.value)} placeholder="PATH / java.exe" />
-            <button type="button" onClick={chooseJava}>{copy.choose}</button>
+          </section>
+          {settingsMessage && <p className="notice notice-good">{settingsMessage}</p>}
+          {coreMessage && <p className="notice notice-warn">{coreMessage}</p>}
+        </div>
+      )}
+
+      {activeCategory === 'arguments' && (
+        <div className="settings-grid settings-section">
+          <label className="field">
+            <span>{copy.ram}: {draft.ramMb} MB</span>
+            <input
+              type="range"
+              min={2048}
+              max={state.system.maxRamMb}
+              step={256}
+              value={draft.ramMb}
+              onChange={(event) => update('ramMb', Number(event.target.value))}
+            />
+          </label>
+          <label className="field row-field">
+            <input type="checkbox" checked={draft.autoConnect} onChange={(event) => update('autoConnect', event.target.checked)} />
+            <span>{copy.autoConnect}</span>
+          </label>
+          <label className="field">
+            <span>Argumenty JVM</span>
+            <input value={draft.jvmArgs} onChange={(event) => update('jvmArgs', event.target.value)} placeholder="-Dexample=true" />
+            <small>Dopisuje argumenty do JVM przez MCLC `customArgs`. Nie wpisuj tutaj `-Xmx`, bo RAM jest ustawiany suwakiem.</small>
+          </label>
+          <label className="field">
+            <span>Argumenty gry</span>
+            <input value={draft.minecraftArgs} onChange={(event) => update('minecraftArgs', event.target.value)} placeholder="--width 1280 --height 720" />
+            <small>Dopisuje argumenty Minecraft przez MCLC `customLaunchArgs`. Nie wymuszamy FOV ani opcji gracza.</small>
+          </label>
+          {settingsMessage && <p className="notice notice-good">{settingsMessage}</p>}
+        </div>
+      )}
+
+      {activeCategory === 'mc-options' && (
+        <div className="settings-section mc-options-editor">
+          <div className="mc-group-tabs">
+            {optionCategories.map((category) => (
+              <button className={selectedMcCategory.id === category.id ? 'active' : ''} type="button" key={category.id} onClick={() => setMcGroup(category.id)}>
+                {category.label}
+              </button>
+            ))}
           </div>
-          <div className="java-actions">
-            <button type="button" onClick={() => void api.openJavaDownload()}>Pobierz Java 21</button>
-            <button type="button" onClick={refreshJava}>Sprawdź ponownie</button>
-          </div>
-          <small>{state.system.java.message}</small>
+          <p className="notice">{selectedMcCategory.description}</p>
+          <McOptionsForm entries={selectedMcCategory.entries} values={mcDraft} onChange={setMcDraft} />
+          <OptionsFileStatus options={mcOptions} message={mcMessage} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function settingsCategoryTitle(category: SettingsCategory): string {
+  if (category === 'arguments') return 'Argumenty MC';
+  if (category === 'mc-options') return 'Ustawienia MC';
+  return 'Launcher';
+}
+
+function McOptionsForm({
+  entries,
+  values,
+  onChange
+}: {
+  entries: McOptionEntry[];
+  values: Record<string, string>;
+  onChange: (values: Record<string, string>) => void;
+}): JSX.Element {
+  const updateValue = (key: string, value: string): void => {
+    onChange({ ...values, [key]: value });
+  };
+
+  return (
+    <div className="mc-options-list">
+      {entries.map((entry) => (
+        <label className="mc-option-row" key={entry.key}>
+          <span>
+            <strong>{entry.label}</strong>
+            <small>{entry.key}{entry.unit ? ` · ${entry.unit}` : ''}{entry.restartRequired ? ' · restart gry' : ''}</small>
+          </span>
+          <McOptionInput entry={entry} value={values[entry.key] ?? entry.default ?? ''} onChange={(value) => updateValue(entry.key, value)} />
+          {entry.notes && <em>{entry.notes}</em>}
         </label>
-        <label className="field">
-          <span>Język / Language</span>
-          <select value={draft.language} onChange={(event) => update('language', event.target.value === 'en' ? 'en' : 'pl')}>
-            <option value="pl">Polski</option>
-            <option value="en">English</option>
-          </select>
-        </label>
-        <section className="danger-zone" aria-label="Core reinstall">
-          <div>
-            <strong>Reinstall core</strong>
-            <p>Czyści runtime gry, wersje, biblioteki, assety i stare installery NeoForge. Nie rusza modów, configów ani save'ów.</p>
-          </div>
-          <button type="button" onClick={handleReinstallCore} disabled={state.launch.running}>
-            Reinstall core
-          </button>
-        </section>
-        {coreMessage && <p className="notice notice-warn">{coreMessage}</p>}
+      ))}
+    </div>
+  );
+}
+
+function McOptionInput({
+  entry,
+  value,
+  onChange
+}: {
+  entry: McOptionEntry;
+  value: string;
+  onChange: (value: string) => void;
+}): JSX.Element {
+  if (entry.key.startsWith('soundCategory_')) {
+    const percent = optionDecimalToPercent(value);
+    const updatePercent = (nextPercent: number): void => {
+      onChange(percentToOptionDecimal(nextPercent));
+    };
+
+    return (
+      <div className="volume-control">
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={percent}
+          onChange={(event) => updatePercent(Number(event.target.value))}
+        />
+        <input
+          type="number"
+          min={0}
+          max={100}
+          step={1}
+          value={percent}
+          onChange={(event) => updatePercent(Number(event.target.value))}
+        />
       </div>
-      <footer className="modal-actions">
-        <button className="play-button compact" type="button" onClick={save}>{copy.save}</button>
-      </footer>
-    </Modal>
+    );
+  }
+
+  if (entry.key === 'fov') {
+    const degrees = fovOptionToDegrees(value);
+    const updateDegrees = (nextDegrees: number): void => {
+      onChange(degreesToFovOption(nextDegrees));
+    };
+
+    return (
+      <div className="fov-control">
+        <input
+          type="range"
+          min={30}
+          max={110}
+          step={2}
+          value={degrees}
+          onChange={(event) => updateDegrees(Number(event.target.value))}
+        />
+        <input
+          type="number"
+          min={30}
+          max={110}
+          step={2}
+          value={degrees}
+          onChange={(event) => updateDegrees(Number(event.target.value))}
+        />
+      </div>
+    );
+  }
+
+  if (entry.type === 'boolean') {
+    return (
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="true">Tak</option>
+        <option value="false">Nie</option>
+      </select>
+    );
+  }
+
+  if (entry.options?.length) {
+    return (
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {entry.options.map((option) => (
+          <option value={option.value} key={option.value}>{option.label}</option>
+        ))}
+      </select>
+    );
+  }
+
+  if (entry.type === 'integer' || entry.type === 'decimal') {
+    return (
+      <input
+        type="number"
+        min={entry.min}
+        max={entry.max}
+        step={entry.step ?? (entry.type === 'integer' ? 1 : 0.01)}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  }
+
+  return <input value={value} onChange={(event) => onChange(event.target.value)} />;
+}
+
+function fovOptionToDegrees(value: string): number {
+  const normalized = clampNumber(Number(value), -1, 1);
+  return Math.round((40 * normalized + 70) / 2) * 2;
+}
+
+function degreesToFovOption(degrees: number): string {
+  const normalized = (clampNumber(degrees, 30, 110) - 70) / 40;
+  return normalized.toFixed(2).replace(/\.?0+$/, '') || '0';
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+function optionDecimalToPercent(value: string): number {
+  return Math.round(clampNumber(Number(value), 0, 1) * 100);
+}
+
+function percentToOptionDecimal(percent: number): string {
+  return (clampNumber(percent, 0, 100) / 100).toFixed(2).replace(/\.?0+$/, '') || '0';
+}
+
+function OptionsFileStatus({ options, message }: { options: MinecraftOptionsState | null; message: string }): JSX.Element {
+  return (
+    <footer className="options-file-status">
+      <span>{options?.exists ? 'options.txt znaleziony' : 'options.txt zostanie utworzony przy zapisie'}</span>
+      <span>Zmiany działają od następnego uruchomienia Minecrafta.</span>
+      <code>{options?.path ?? 'minecraft/options.txt'}</code>
+      {message && <strong>{message}</strong>}
+    </footer>
   );
 }
 
@@ -758,19 +1149,32 @@ function addonUpdateLabel(update: ModrinthAddonUpdate | undefined): string {
 function MapModal({ backendUrl, onClose }: { backendUrl: string; onClose: () => void }): JSX.Element {
   return (
     <Modal title="Mapa" onClose={onClose} wide>
-      <iframe className="map-frame" title="Mapa serwera" src={`${backendUrl}/map/`} />
+      <iframe className="map-frame" title={`Mapa ${branding.serverName}`} src={`${backendUrl}/map/`} />
     </Modal>
   );
 }
 
 function LogsModal({ logs, onClose }: { logs: string[]; onClose: () => void }): JSX.Element {
   const [autoscroll, setAutoscroll] = useState(true);
+  const [filter, setFilter] = useState<LogFilter>('all');
+  const [copied, setCopied] = useState('');
   const logRef = useRef<HTMLPreElement | null>(null);
+  const visibleLogs = useMemo(() => filterLogs(logs, filter), [filter, logs]);
 
   useEffect(() => {
     if (!autoscroll || !logRef.current) return;
     logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [autoscroll, logs]);
+  }, [autoscroll, visibleLogs]);
+
+  const copyLastLines = async (limit: number): Promise<void> => {
+    const lines = visibleLogs.slice(-limit);
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      setCopied(`${limit}`);
+    } catch {
+      setCopied('');
+    }
+  };
 
   return (
     <Modal title="Logi" onClose={onClose} wide>
@@ -779,10 +1183,51 @@ function LogsModal({ logs, onClose }: { logs: string[]; onClose: () => void }): 
           <input type="checkbox" checked={autoscroll} onChange={(event) => setAutoscroll(event.target.checked)} />
           <span>Autoscroll</span>
         </label>
+        <label className="field logs-filter">
+          <span>Filtr</span>
+          <select value={filter} onChange={(event) => setFilter(event.target.value as LogFilter)}>
+            <option value="all">Wszystko</option>
+            <option value="launcher">Launcher</option>
+            <option value="sync">Sync</option>
+            <option value="minecraft">Java / Minecraft</option>
+            <option value="error">Błędy</option>
+          </select>
+        </label>
+        <div className="logs-copy-actions">
+          <button type="button" onClick={() => void copyLastLines(100)}>
+            {copied === '100' ? 'Skopiowano' : 'Kopiuj 100'}
+          </button>
+          <button type="button" onClick={() => void copyLastLines(300)}>
+            {copied === '300' ? 'Skopiowano' : 'Kopiuj 300'}
+          </button>
+        </div>
       </div>
-      <pre className="logs-view" ref={logRef}>{logs.length ? logs.join('\n') : 'Brak logów JVM.'}</pre>
+      <pre className="logs-view" ref={logRef}>{visibleLogs.length ? visibleLogs.join('\n') : 'Brak logów dla tego filtra.'}</pre>
     </Modal>
   );
+}
+
+function filterLogs(logs: string[], filter: LogFilter): string[] {
+  if (filter === 'all') return logs;
+
+  return logs.filter((line) => {
+    if (filter === 'error') return isErrorLog(line);
+    if (filter === 'sync') return isSyncLog(line);
+    if (filter === 'minecraft') return isMinecraftLog(line);
+    return !isSyncLog(line) && !isMinecraftLog(line);
+  });
+}
+
+function isSyncLog(line: string): boolean {
+  return /sync|manifest|sha256|download|pobier|sprawdz|weryfik/i.test(line);
+}
+
+function isMinecraftLog(line: string): boolean {
+  return /minecraft|neoforge|forge|mclc|java|jvm|launch|game|modlauncher|bootstrap/i.test(line);
+}
+
+function isErrorLog(line: string): boolean {
+  return /error|exception|crash|failed|fatal|błąd|blad|warn|warning/i.test(line);
 }
 
 function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
@@ -938,31 +1383,31 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
           </section>
         ) : (
           <div className="modrinth-results" onScroll={handleScroll}>
-          {results.map((project) => {
-            const installedAddon = findInstalledAddon(project, installed);
+            {results.map((project) => {
+              const installedAddon = findInstalledAddon(project, installed);
 
-            return (
-              <article className={`modrinth-card ${installedAddon ? 'installed' : ''}`} key={project.projectId}>
-                {project.iconUrl ? <img src={project.iconUrl} alt="" /> : <span className="modrinth-icon-placeholder">{project.title.slice(0, 1)}</span>}
-                <div>
-                  <header>
-                    <strong>{project.title}</strong>
-                    <small>{projectTypeLabel(project.projectType)} · {project.downloads.toLocaleString('pl-PL')} pobran</small>
-                  </header>
-                  <p>{project.description}</p>
-                  {project.projectType === 'mod' && (
-                    <small>Client: {project.clientSide || 'unknown'} · Server: {project.serverSide || 'unknown'}</small>
-                  )}
-                  {installedAddon && (
-                    <small className="installed-label">Zainstalowany: {installedAddon.fileName}</small>
-                  )}
-                </div>
-                <button type="button" onClick={() => install(project)} disabled={busy || Boolean(installedAddon)}>
-                  {installedAddon ? 'Zainstalowany' : 'Instaluj'}
-                </button>
-              </article>
-            );
-          })}
+              return (
+                <article className={`modrinth-card ${installedAddon ? 'installed' : ''}`} key={project.projectId}>
+                  {project.iconUrl ? <img src={project.iconUrl} alt="" /> : <span className="modrinth-icon-placeholder">{project.title.slice(0, 1)}</span>}
+                  <div>
+                    <header>
+                      <strong>{project.title}</strong>
+                      <small>{projectTypeLabel(project.projectType)} · {project.downloads.toLocaleString('pl-PL')} pobran</small>
+                    </header>
+                    <p>{project.description}</p>
+                    {project.projectType === 'mod' && (
+                      <small>Client: {project.clientSide || 'unknown'} · Server: {project.serverSide || 'unknown'}</small>
+                    )}
+                    {installedAddon && (
+                      <small className="installed-label">Zainstalowany: {installedAddon.fileName}</small>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => install(project)} disabled={busy || Boolean(installedAddon)}>
+                    {installedAddon ? 'Zainstalowany' : 'Instaluj'}
+                  </button>
+                </article>
+              );
+            })}
             {loadingMore && <p className="notice notice-warn">Wczytywanie kolejnych wynikow...</p>}
           </div>
         )}

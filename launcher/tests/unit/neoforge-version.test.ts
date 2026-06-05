@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { compareNeoForgeVersions, forgeMetadataIsStale, minecraftDownloadMessage, parseNeoForgeVersions, purgeStaleForgeMetadata } from '../../electron/main/game';
+import { compareNeoForgeVersions, forgeMetadataIsStale, minecraftDownloadMessage, parseNeoForgeVersions, purgeStaleForgeMetadata, splitLaunchArgs } from '../../electron/main/game';
 
 describe('NeoForge version resolver helpers', () => {
   it('parses 1.21.1 NeoForge versions from Maven metadata', () => {
@@ -46,5 +46,9 @@ describe('NeoForge version resolver helpers', () => {
   it('formats Minecraft download progress for launcher status', () => {
     expect(minecraftDownloadMessage({ name: 'client.jar', current: 2, total: 4 })).toBe('Pobieranie Minecraft: client.jar (2/4)');
     expect(minecraftDownloadMessage(null)).toBe('Pobieranie plików Minecraft...');
+  });
+
+  it('splits custom launch args with quotes', () => {
+    expect(splitLaunchArgs('-Dfoo=bar "--demo value" --width 1280')).toEqual(['-Dfoo=bar', '--demo value', '--width', '1280']);
   });
 });

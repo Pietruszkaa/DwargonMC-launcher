@@ -9,9 +9,12 @@ export type LauncherSettings = {
   backendUrl: string;
   ramMb: number;
   closeOnLaunch: boolean;
+  windowCloseBehavior: 'ask' | 'tray' | 'exit';
   autoConnect: boolean;
   showLogs: boolean;
   javaPath: string;
+  jvmArgs: string;
+  minecraftArgs: string;
   language: Language;
 };
 
@@ -39,9 +42,12 @@ export function defaultSettings(): LauncherSettings {
     backendUrl: DEFAULT_BACKEND_URL,
     ramMb: ram.defaultRamMb,
     closeOnLaunch: false,
+    windowCloseBehavior: 'ask',
     autoConnect: true,
     showLogs: true,
     javaPath: '',
+    jvmArgs: '',
+    minecraftArgs: '',
     language: 'pl'
   };
 }
@@ -80,6 +86,9 @@ export async function readSettings(paths: LauncherPaths): Promise<LauncherSettin
     ...settings,
     backendUrl: normalizeBackendUrl(settings.backendUrl),
     ramMb: clampRam(settings.ramMb),
+    windowCloseBehavior: normalizeWindowCloseBehavior(settings.windowCloseBehavior),
+    jvmArgs: normalizeArgLine(settings.jvmArgs),
+    minecraftArgs: normalizeArgLine(settings.minecraftArgs),
     language: settings.language === 'en' ? 'en' : 'pl'
   };
 }
@@ -89,6 +98,9 @@ export async function saveSettings(paths: LauncherPaths, settings: LauncherSetti
     ...settings,
     backendUrl: normalizeBackendUrl(settings.backendUrl),
     ramMb: clampRam(settings.ramMb),
+    windowCloseBehavior: normalizeWindowCloseBehavior(settings.windowCloseBehavior),
+    jvmArgs: normalizeArgLine(settings.jvmArgs),
+    minecraftArgs: normalizeArgLine(settings.minecraftArgs),
     language: settings.language === 'en' ? 'en' : 'pl'
   };
 
@@ -149,4 +161,12 @@ export function normalizeBackendUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return DEFAULT_BACKEND_URL;
   return trimmed.replace(/\/+$/, '');
+}
+
+function normalizeArgLine(value: string | undefined): string {
+  return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function normalizeWindowCloseBehavior(value: LauncherSettings['windowCloseBehavior'] | undefined): LauncherSettings['windowCloseBehavior'] {
+  return value === 'tray' || value === 'exit' ? value : 'ask';
 }
