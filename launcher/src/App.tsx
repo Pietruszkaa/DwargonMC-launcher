@@ -795,8 +795,11 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [installed, setInstalled] = useState<InstalledModrinthProject[]>([]);
+  const [view, setView] = useState<'browse' | 'installed'>('browse');
   const [message, setMessage] = useState('Wyszukuj resourcepacki, shaderpacki i opcjonalne client-side mody dla Minecraft 1.21.1.');
   const loadingResultsRef = useRef(false);
+  const userInstalled = installed.filter((item) => !item.managed);
+  const serverInstalled = installed.filter((item) => item.managed);
 
   const refreshInstalled = useCallback(async (): Promise<void> => {
     try {
@@ -870,10 +873,34 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
     }
   };
 
+  const removeInstalled = async (item: InstalledModrinthProject): Promise<void> => {
+    if (item.managed) return;
+
+    setBusy(true);
+    setMessage(`Usuwanie ${item.fileName}...`);
+    try {
+      const result = await api.removePlayerAddon(item.path);
+      setMessage(result.message);
+      await refreshInstalled();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Nie udalo sie usunac dodatku.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Modal title="Dodatki Modrinth" onClose={onClose} wide>
       <div className="modrinth-panel">
         <div className="modrinth-controls">
+          <div className="modrinth-tabs" role="tablist" aria-label="Widok Modrinth">
+            <button className={view === 'browse' ? 'active' : ''} type="button" onClick={() => setView('browse')}>
+              Przeglądaj
+            </button>
+            <button className={view === 'installed' ? 'active' : ''} type="button" onClick={() => setView('installed')}>
+              Zainstalowane ({installed.length})
+            </button>
+          </div>
           <label className="field">
             <span>Szukaj</span>
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Sodium, Complementary, Faithful..." />
@@ -902,36 +929,82 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
 
         <p className="notice notice-warn">{message}</p>
 
-        <div className="modrinth-results" onScroll={handleScroll}>
+        {view === 'installed' ? (
+          <section className="installed-addons">
+            <div className="installed-groups">
+              <InstalledAddonGroup title="Użytkownika" items={userInstalled} busy={busy} onRemove={removeInstalled} />
+              <InstalledAddonGroup title="Serwerowe" items={serverInstalled} busy={busy} onRemove={removeInstalled} />
+            </div>
+          </section>
+        ) : (
+          <div className="modrinth-results" onScroll={handleScroll}>
           {results.map((project) => {
             const installedAddon = findInstalledAddon(project, installed);
 
             return (
-            <article className={`modrinth-card ${installedAddon ? 'installed' : ''}`} key={project.projectId}>
-              {project.iconUrl ? <img src={project.iconUrl} alt="" /> : <span className="modrinth-icon-placeholder">{project.title.slice(0, 1)}</span>}
-              <div>
-                <header>
-                  <strong>{project.title}</strong>
-                  <small>{projectTypeLabel(project.projectType)} · {project.downloads.toLocaleString('pl-PL')} pobran</small>
-                </header>
-                <p>{project.description}</p>
-                {project.projectType === 'mod' && (
-                  <small>Client: {project.clientSide || 'unknown'} · Server: {project.serverSide || 'unknown'}</small>
-                )}
-                {installedAddon && (
-                  <small className="installed-label">Zainstalowany: {installedAddon.fileName}</small>
-                )}
-              </div>
-              <button type="button" onClick={() => install(project)} disabled={busy || Boolean(installedAddon)}>
-                {installedAddon ? 'Zainstalowany' : 'Instaluj'}
-              </button>
-            </article>
+              <article className={`modrinth-card ${installedAddon ? 'installed' : ''}`} key={project.projectId}>
+                {project.iconUrl ? <img src={project.iconUrl} alt="" /> : <span className="modrinth-icon-placeholder">{project.title.slice(0, 1)}</span>}
+                <div>
+                  <header>
+                    <strong>{project.title}</strong>
+                    <small>{projectTypeLabel(project.projectType)} · {project.downloads.toLocaleString('pl-PL')} pobran</small>
+                  </header>
+                  <p>{project.description}</p>
+                  {project.projectType === 'mod' && (
+                    <small>Client: {project.clientSide || 'unknown'} · Server: {project.serverSide || 'unknown'}</small>
+                  )}
+                  {installedAddon && (
+                    <small className="installed-label">Zainstalowany: {installedAddon.fileName}</small>
+                  )}
+                </div>
+                <button type="button" onClick={() => install(project)} disabled={busy || Boolean(installedAddon)}>
+                  {installedAddon ? 'Zainstalowany' : 'Instaluj'}
+                </button>
+              </article>
             );
           })}
-          {loadingMore && <p className="notice notice-warn">Wczytywanie kolejnych wynikow...</p>}
-        </div>
+            {loadingMore && <p className="notice notice-warn">Wczytywanie kolejnych wynikow...</p>}
+          </div>
+        )}
       </div>
     </Modal>
+  );
+}
+
+function InstalledAddonGroup({
+  title,
+  items,
+  busy,
+  onRemove
+}: {
+  title: string;
+  items: InstalledModrinthProject[];
+  busy: boolean;
+  onRemove(item: InstalledModrinthProject): Promise<void>;
+}): JSX.Element {
+  return (
+    <section className="installed-group">
+      <h4>{title}</h4>
+      {items.length ? (
+        items.map((item) => (
+          <div className="installed-row" key={item.path}>
+            <span>
+              <strong>{item.fileName}</strong>
+              <small>{projectTypeLabel(item.kind === 'resourcepack' ? 'resourcepack' : item.kind === 'shader' ? 'shader' : 'mod')}</small>
+            </span>
+            {item.managed ? (
+              <em>Z serwera</em>
+            ) : (
+              <button type="button" onClick={() => void onRemove(item)} disabled={busy}>
+                Usuń
+              </button>
+            )}
+          </div>
+        ))
+      ) : (
+        <p>Brak.</p>
+      )}
+    </section>
   );
 }
 

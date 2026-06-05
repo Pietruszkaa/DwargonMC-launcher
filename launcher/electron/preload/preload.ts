@@ -12,6 +12,7 @@ const api = {
   searchModrinth: (request: unknown) => ipcRenderer.invoke('launcher:search-modrinth', request),
   installModrinth: (request: unknown) => ipcRenderer.invoke('launcher:install-modrinth', request),
   listInstalledModrinth: () => ipcRenderer.invoke('launcher:list-installed-modrinth'),
+  removePlayerAddon: (relativePath: unknown) => ipcRenderer.invoke('launcher:remove-player-addon', relativePath),
   checkAddonUpdates: () => ipcRenderer.invoke('launcher:check-addon-updates'),
   checkUpdate: () => ipcRenderer.invoke('launcher:check-update'),
   openUpdateDownload: () => ipcRenderer.invoke('launcher:open-update-download'),

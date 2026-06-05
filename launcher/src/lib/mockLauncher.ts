@@ -71,7 +71,8 @@ let state: LauncherState = {
       path: 'resourcepacks/mock-pack.zip',
       size: 1024,
       sha1: 'mock-sha1',
-      sha512: 'mock-sha512'
+      sha512: 'mock-sha512',
+      managed: false
     }
   ],
   backgrounds: [
@@ -235,9 +236,22 @@ export function getLauncherApi(): LauncherApi {
           projectId: 'mock-sodium',
           slug: 'mock-pack',
           fileName: 'mock-pack.zip',
-          path: 'resourcepacks/mock-pack.zip'
+          path: 'resourcepacks/mock-pack.zip',
+          kind: 'resourcepack',
+          managed: false
         }
       ];
+    },
+    async removePlayerAddon(relativePath) {
+      state = {
+        ...state,
+        playerAddons: state.playerAddons.filter((file) => file.path !== relativePath)
+      };
+      emitState();
+      return {
+        removed: true,
+        message: `Mock: usunieto ${relativePath}.`
+      };
     },
     async checkAddonUpdates() {
       return state.playerAddons.map((file) => ({

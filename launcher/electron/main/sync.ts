@@ -22,6 +22,7 @@ export type PlayerAddonFile = {
   size: number;
   sha1: string;
   sha512: string;
+  managed: boolean;
 };
 
 export type ListAddonFilesOptions = {
@@ -192,12 +193,37 @@ export async function listPlayerAddonFiles(minecraftDir: string, options: ListAd
         path: normalizeRelativePath(path.relative(minecraftDir, file)),
         size: stat.size,
         sha1: crypto.createHash('sha1').update(data).digest('hex'),
-        sha512: crypto.createHash('sha512').update(data).digest('hex')
+        sha512: crypto.createHash('sha512').update(data).digest('hex'),
+        managed: path.basename(file).startsWith('_')
       });
     }
   }
 
   return output.sort((left, right) => left.path.localeCompare(right.path, 'pl'));
+}
+
+export async function removePlayerAddonFile(minecraftDir: string, relativePath: string): Promise<{ removed: boolean; message: string }> {
+  const normalized = normalizeRemotePath(relativePath);
+  const group = normalized.split('/')[0];
+  if (!['mods', 'resourcepacks', 'shaderpacks'].includes(group) || !isAddonFile(normalized)) {
+    throw new Error('Nieprawidlowa sciezka dodatku.');
+  }
+
+  if (path.basename(normalized).startsWith('_')) {
+    throw new Error('Tym plikiem zarzadza sync serwera.');
+  }
+
+  const target = path.resolve(minecraftDir, normalized);
+  const root = path.resolve(minecraftDir);
+  if (!target.startsWith(`${root}${path.sep}`)) {
+    throw new Error('Nieprawidlowa sciezka dodatku.');
+  }
+
+  await fs.rm(target, { force: true });
+  return {
+    removed: true,
+    message: `Usunieto ${normalized}.`
+  };
 }
 
 export function managedLocalPath(minecraftDir: string, remotePath: string): string {

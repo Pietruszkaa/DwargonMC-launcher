@@ -12,7 +12,7 @@ import { checkModrinthAddonUpdates, installModrinthProject, listInstalledModrint
 import { ensureLauncherDirs, getLauncherPaths, type LauncherPaths } from './paths';
 import { getRamInfo } from './ram';
 import { resolveSetupPaths, type SetupState } from './setup';
-import { listManagedLocalFiles, listPlayerAddonFiles, runSync, type ManagedFile, type PlayerAddonFile, type PlayerAddonKind, type SyncStatus } from './sync';
+import { listManagedLocalFiles, listPlayerAddonFiles, removePlayerAddonFile, runSync, type ManagedFile, type PlayerAddonFile, type PlayerAddonKind, type SyncStatus } from './sync';
 import {
   readProfile,
   readSettings,
@@ -242,6 +242,14 @@ function registerIpc(): void {
     const addonsForDetection = await listPlayerAddonFiles(paths.minecraftDir, { includeManaged: true });
     emitState();
     return listInstalledModrinthProjects(addonsForDetection);
+  });
+
+  ipcMain.handle('launcher:remove-player-addon', async (_event, relativePath: string) => {
+    const result = await removePlayerAddonFile(paths.minecraftDir, relativePath);
+    appendLog(result.message);
+    state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
+    emitState();
+    return result;
   });
 
   ipcMain.handle('launcher:open-update-download', async () => {

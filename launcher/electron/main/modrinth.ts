@@ -60,6 +60,8 @@ export type InstalledModrinthProject = {
   slug: string;
   fileName: string;
   path: string;
+  kind: PlayerAddonFile['kind'];
+  managed: boolean;
 };
 
 type SearchResponse = {
@@ -221,7 +223,9 @@ export function listInstalledModrinthProjects(files: PlayerAddonFile[]): Install
       projectId: null,
       slug,
       fileName: file.name,
-      path: file.path
+      path: file.path,
+      kind: file.kind,
+      managed: file.managed
     });
   }
 

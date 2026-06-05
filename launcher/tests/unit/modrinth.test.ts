@@ -93,7 +93,9 @@ describe('Modrinth helpers', () => {
         projectId: null,
         slug: 'pack',
         fileName: 'pack.zip',
-        path: 'resourcepacks/pack.zip'
+        path: 'resourcepacks/pack.zip',
+        kind: 'resourcepack',
+        managed: false
       }
     ]);
     expect(axios.post).not.toHaveBeenCalled();
@@ -112,7 +114,9 @@ describe('Modrinth helpers', () => {
         projectId: null,
         slug: 'sodium',
         fileName: '_sodium-neoforge-0.6.13.jar',
-        path: 'mods/_sodium-neoforge-0.6.13.jar'
+        path: 'mods/_sodium-neoforge-0.6.13.jar',
+        kind: 'mod',
+        managed: true
       }
     ]);
     expect(axios.post).not.toHaveBeenCalled();

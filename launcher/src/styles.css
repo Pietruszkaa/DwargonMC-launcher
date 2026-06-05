@@ -1072,9 +1072,29 @@ button:disabled {
 
 .modrinth-controls {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 160px 150px auto;
+  grid-template-columns: auto minmax(180px, 1fr) 160px 150px auto;
   gap: 12px;
   align-items: end;
+}
+
+.modrinth-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 6px;
+}
+
+.modrinth-tabs button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.42);
+  color: var(--muted);
+  padding: 0 12px;
+  font-weight: 800;
+}
+
+.modrinth-tabs button.active {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .modrinth-controls .play-button {
@@ -1086,6 +1106,81 @@ button:disabled {
   display: grid;
   gap: 10px;
   overflow: auto;
+}
+
+.installed-addons {
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.26);
+  padding: 12px;
+  overflow: auto;
+}
+
+.installed-addons > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.installed-addons h3,
+.installed-group h4,
+.installed-addons p {
+  margin: 0;
+}
+
+.installed-addons small,
+.installed-addons p,
+.installed-row em {
+  color: var(--muted);
+}
+
+.installed-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.installed-group {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.installed-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 7px 8px;
+}
+
+.installed-row span,
+.installed-row strong {
+  min-width: 0;
+}
+
+.installed-row strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.installed-row button {
+  min-height: 30px;
+  border: 1px solid rgba(255, 82, 82, 0.45);
+  background: rgba(255, 82, 82, 0.1);
+  color: var(--bad);
+  padding: 0 10px;
+  font-weight: 800;
 }
 
 .account-choice {
@@ -1424,6 +1519,8 @@ button:disabled {
   .danger-zone,
   .java-help-actions,
   .file-row,
+  .modrinth-controls,
+  .modrinth-tabs,
   .preflight-panel,
   .inline-control {
     grid-template-columns: 1fr;

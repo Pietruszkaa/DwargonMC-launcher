@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { listPlayerAddonFiles, managedLocalPath, managedRelativePath, normalizeRemotePath } from '../../electron/main/sync';
+import { listPlayerAddonFiles, managedLocalPath, managedRelativePath, normalizeRemotePath, removePlayerAddonFile } from '../../electron/main/sync';
 
 describe('managed file paths', () => {
   it('adds underscore only to managed local filenames', () => {
@@ -32,6 +32,7 @@ describe('managed file paths', () => {
 
     expect(files.map((file) => file.path)).toEqual(['mods/iris.jar', 'resourcepacks/faithful.zip']);
     expect(files[0].kind).toBe('mod');
+    expect(files[0].managed).toBe(false);
     expect(files[0].sha1).toHaveLength(40);
     expect(files[0].sha512).toHaveLength(128);
   });
@@ -45,5 +46,18 @@ describe('managed file paths', () => {
 
     expect(files.map((file) => file.path)).toEqual(['mods/_sodium.jar']);
     expect(files[0].kind).toBe('mod');
+    expect(files[0].managed).toBe(true);
+  });
+
+  it('removes only user addon files', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dwargon-remove-addon-'));
+    await fs.mkdir(path.join(root, 'mods'), { recursive: true });
+    await fs.writeFile(path.join(root, 'mods', 'iris.jar'), 'player mod');
+    await fs.writeFile(path.join(root, 'mods', '_server.jar'), 'managed');
+
+    await expect(removePlayerAddonFile(root, 'mods/iris.jar')).resolves.toMatchObject({ removed: true });
+    await expect(fs.stat(path.join(root, 'mods', 'iris.jar'))).rejects.toThrow();
+    await expect(removePlayerAddonFile(root, 'mods/_server.jar')).rejects.toThrow('Tym plikiem zarzadza sync serwera.');
+    await expect(fs.stat(path.join(root, 'mods', '_server.jar'))).resolves.toBeTruthy();
   });
 });

@@ -17,6 +17,7 @@ export type PlayerAddonFile = {
   size: number;
   sha1: string;
   sha512: string;
+  managed: boolean;
 };
 
 export type Manifest = {
@@ -220,6 +221,13 @@ export type InstalledModrinthProject = {
   slug: string;
   fileName: string;
   path: string;
+  kind: PlayerAddonKind;
+  managed: boolean;
+};
+
+export type RemovePlayerAddonResult = {
+  removed: boolean;
+  message: string;
 };
 
 export type LauncherApi = {
@@ -234,6 +242,7 @@ export type LauncherApi = {
   searchModrinth(request: ModrinthSearchRequest): Promise<ModrinthProject[]>;
   installModrinth(request: ModrinthInstallRequest): Promise<ModrinthInstallResult>;
   listInstalledModrinth(): Promise<InstalledModrinthProject[]>;
+  removePlayerAddon(relativePath: string): Promise<RemovePlayerAddonResult>;
   checkAddonUpdates(): Promise<ModrinthAddonUpdate[]>;
   checkUpdate(): Promise<UpdateStatus>;
   openUpdateDownload(): Promise<void>;
