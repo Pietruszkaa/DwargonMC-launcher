@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type UIEvent } from 'react';
 import { Modal } from '~components/Modal';
 import { getLauncherApi } from '@/lib/mockLauncher';
 import { t } from '@/lib/i18n';
-import type { Announcement, CrashInfo, LauncherSettings, LauncherState, ModrinthAddonUpdate, ModrinthProject, ModrinthProjectType, ModrinthSort } from '@/types/launcher';
+import type { Announcement, CrashInfo, InstalledModrinthProject, LauncherSettings, LauncherState, ModrinthAddonUpdate, ModrinthProject, ModrinthProjectType, ModrinthSort } from '@/types/launcher';
 
 type Popup = 'settings' | 'files' | 'map' | 'logs' | 'modrinth' | null;
 
 const api = getLauncherApi();
+const MODRINTH_PAGE_SIZE = 20;
 
 export function App(): JSX.Element {
   const [state, setState] = useState<LauncherState | null>(null);
@@ -17,6 +18,9 @@ export function App(): JSX.Element {
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const [backgroundIndex, setBackgroundIndex] = useState(0);
   const [updateDismissed, setUpdateDismissed] = useState(false);
+  const [accountPromptDismissed, setAccountPromptDismissed] = useState(false);
+  const [javaPromptDismissed, setJavaPromptDismissed] = useState(false);
+  const [timeTick, setTimeTick] = useState(() => Date.now());
 
   useEffect(() => {
     void api.getState().then((next) => {
@@ -49,6 +53,21 @@ export function App(): JSX.Element {
     return () => window.clearInterval(timer);
   }, [state?.backgrounds.length]);
 
+  useEffect(() => {
+    if (state?.system.java.ok) setJavaPromptDismissed(false);
+  }, [state?.system.java.ok]);
+
+  useEffect(() => {
+    if (state?.launch.running || !state?.profile.lastPlayedAt) return undefined;
+
+    setTimeTick(Date.now());
+    const timer = window.setInterval(() => {
+      setTimeTick(Date.now());
+    }, 60_000);
+
+    return () => window.clearInterval(timer);
+  }, [state?.launch.running, state?.profile.lastPlayedAt]);
+
   const handlePlay = useCallback(async () => {
     await api.launchGame({ nickname });
   }, [nickname]);
@@ -73,6 +92,16 @@ export function App(): JSX.Element {
     state.sync.totalFiles > 0 ? Math.round((state.sync.completedFiles / state.sync.totalFiles) * 100) : 0;
   const isNickValid = /^[A-Za-z0-9_]{3,16}$/.test(nickname);
   const syncLabel = getSyncLabel(state.sync);
+  const showUpdatePrompt = state.update.available && !updateDismissed;
+  const showAccountPrompt = !accountPromptDismissed && state.profile.accountMode === 'offline' && !state.profile.nickname;
+  const showJavaPrompt =
+    !javaPromptDismissed &&
+    !state.system.java.ok &&
+    state.setup.complete &&
+    !showUpdatePrompt &&
+    !showAccountPrompt &&
+    !popup &&
+    !crash;
 
   if (state.setup.required && !state.setup.complete) {
     return <SetupWizard state={state} onComplete={handleCompleteSetup} onWindowAction={handleWindowAction} />;
@@ -144,8 +173,15 @@ export function App(): JSX.Element {
               Dodatki
             </button>
             <div className="spacer" />
-            <button className="icon-btn" type="button" onClick={() => void api.openMinecraftFolder()} title="Folder z grą">
-              Folder
+            <PreflightPanel state={state} />
+            <div className="sidebar-stats">
+              <span>Ostatnia sesja</span>
+              <strong>{formatLastSessionClose(state.profile.lastPlayedAt, timeTick)}</strong>
+              <span>Łączny czas gry</span>
+              <strong>{formatDuration(state.profile.totalPlaySeconds)}</strong>
+            </div>
+            <button className="icon-btn" type="button" onClick={() => void api.openMinecraftFolder()} title="Pliki gry">
+              Pliki gry
             </button>
           </nav>
         </aside>
@@ -163,9 +199,6 @@ export function App(): JSX.Element {
                 <div className="players-list">
                   {state.health.players.length ? state.health.players.map((player) => <span key={player}>{player}</span>) : <span className="muted">Brak danych z backendu</span>}
                 </div>
-                <p>Ostatnio grałeś: {formatLastPlayed(state.profile.lastPlayedAt)}</p>
-                <p>Ostatnia sesja: {formatDuration(state.profile.lastSessionSeconds)}</p>
-                <p>Łącznie: {formatDuration(state.profile.totalPlaySeconds)} · starty: {state.profile.launchCount}</p>
               </section>
             </div>
           </aside>
@@ -197,8 +230,14 @@ export function App(): JSX.Element {
       {popup === 'map' && <MapModal backendUrl={state.settings.backendUrl} onClose={() => setPopup(null)} />}
       {popup === 'logs' && <LogsModal logs={state.logs} onClose={() => setPopup(null)} />}
       {popup === 'modrinth' && <ModrinthModal onClose={() => setPopup(null)} />}
-      {state.update.available && !updateDismissed && (
+      {showUpdatePrompt && (
         <UpdateModal state={state} onClose={() => setUpdateDismissed(true)} />
+      )}
+      {showAccountPrompt && (
+        <AccountChoiceModal onClose={() => setAccountPromptDismissed(true)} />
+      )}
+      {showJavaPrompt && (
+        <JavaHelpModal state={state} onClose={() => setJavaPromptDismissed(true)} />
       )}
       {crash && <CrashModal crash={crash} onClose={() => setCrash(null)} />}
     </main>
@@ -349,23 +388,45 @@ function getSyncLabel(sync: LauncherState['sync']): string {
   return 'Sync gotowy';
 }
 
-function formatLastPlayed(value: string | null): string {
-  if (!value) return 'brak';
+function PreflightPanel({ state }: { state: LauncherState }): JSX.Element {
+  const items = [
+    {
+      label: 'Java',
+      value: state.system.java.ok ? `OK ${state.system.java.version ?? ''}`.trim() : 'Problem',
+      kind: state.system.java.ok ? 'good' : 'bad'
+    },
+    {
+      label: 'RAM',
+      value: `${state.settings.ramMb} MB`,
+      kind: state.settings.ramMb <= state.system.maxRamMb ? 'good' : 'bad'
+    },
+    {
+      label: 'Sync',
+      value: state.sync.verified ? 'OK' : state.sync.phase === 'warning' ? 'Ostrzeżenie' : state.sync.phase,
+      kind: state.sync.verified ? 'good' : 'warn'
+    },
+    {
+      label: 'Serwer',
+      value: state.health.serverOnline ? 'Online' : 'Offline',
+      kind: state.health.serverOnline ? 'good' : 'warn'
+    }
+  ];
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'brak';
-
-  return new Intl.DateTimeFormat('pl-PL', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(date);
+  return (
+    <section className="preflight-panel" aria-label="Preflight">
+      {items.map((item) => (
+        <span className={`preflight-item preflight-${item.kind}`} key={item.label}>
+          <small>{item.label}</small>
+          <strong>{item.value}</strong>
+        </span>
+      ))}
+    </section>
+  );
 }
 
-function formatDuration(totalSeconds: number): string {
+function formatDuration(totalSeconds: number, zeroLabel = 'brak'): string {
   const seconds = Math.max(0, Math.round(totalSeconds || 0));
-  if (seconds === 0) return 'brak';
+  if (seconds === 0) return zeroLabel;
 
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -374,6 +435,101 @@ function formatDuration(totalSeconds: number): string {
   if (hours > 0) return `${hours}h`;
   if (minutes > 0) return `${minutes}min`;
   return '<1min';
+}
+
+function formatLastSessionClose(value: string | null, now: number): string {
+  if (!value) return 'brak';
+
+  const closedAt = Date.parse(value);
+  if (Number.isNaN(closedAt)) return 'brak';
+
+  const secondsAgo = Math.max(0, Math.floor((now - closedAt) / 1000));
+  return `${formatDuration(secondsAgo, '<1min')} temu`;
+}
+
+function AccountChoiceModal({ onClose }: { onClose: () => void }): JSX.Element {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const login = async (): Promise<void> => {
+    setBusy(true);
+    setMessage('Otwieranie logowania Microsoft...');
+    try {
+      await api.loginMicrosoft();
+      onClose();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Nie udało się zalogować konta Microsoft.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Wybierz tryb konta" onClose={onClose}>
+      <div className="account-choice">
+        <button type="button" onClick={onClose} disabled={busy}>
+          <strong>Non-premium</strong>
+          <span>Wpisz nick w górnym pasku i graj offline.</span>
+        </button>
+        <button type="button" onClick={login} disabled={busy}>
+          <strong>Microsoft</strong>
+          <span>Zaloguj konto premium przez Microsoft.</span>
+        </button>
+        {message && <p className="notice notice-warn">{message}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(state.system.java.message);
+
+  const refresh = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await api.refreshJava();
+      setMessage(result.message);
+      if (result.ok) onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chooseJava = async (): Promise<void> => {
+    const selected = await api.chooseJavaPath();
+    if (!selected) return;
+
+    setBusy(true);
+    try {
+      await api.saveSettings({ ...state.settings, javaPath: selected });
+      const result = await api.refreshJava();
+      setMessage(result.message);
+      if (result.ok) onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Java wymagana" onClose={onClose}>
+      <div className="java-help">
+        <p>{message}</p>
+        <div className="java-help-actions">
+          <button type="button" onClick={() => void api.openJavaDownload()} disabled={busy}>
+            Pobierz Java 21
+          </button>
+          <button type="button" onClick={refresh} disabled={busy}>
+            Sprawdź ponownie
+          </button>
+          <button type="button" onClick={chooseJava} disabled={busy}>
+            Wskaż ręcznie
+          </button>
+        </div>
+        <small>Po instalacji uruchom sprawdzenie ponownie. Launcher nie instaluje Javy po cichu i nie zmienia PATH.</small>
+      </div>
+    </Modal>
+  );
 }
 
 function SettingsModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {
@@ -390,6 +546,12 @@ function SettingsModal({ state, onClose }: { state: LauncherState; onClose: () =
   const chooseJava = async (): Promise<void> => {
     const selected = await api.chooseJavaPath();
     if (selected) update('javaPath', selected);
+  };
+
+  const refreshJava = async (): Promise<void> => {
+    await api.saveSettings(draft);
+    const result = await api.refreshJava();
+    update('javaPath', result.path === 'java' ? '' : result.path);
   };
 
   const save = async (): Promise<void> => {
@@ -480,6 +642,10 @@ function SettingsModal({ state, onClose }: { state: LauncherState; onClose: () =
           <div className="inline-control">
             <input value={draft.javaPath} onChange={(event) => update('javaPath', event.target.value)} placeholder="PATH / java.exe" />
             <button type="button" onClick={chooseJava}>{copy.choose}</button>
+          </div>
+          <div className="java-actions">
+            <button type="button" onClick={() => void api.openJavaDownload()}>Pobierz Java 21</button>
+            <button type="button" onClick={refreshJava}>Sprawdź ponownie</button>
           </div>
           <small>{state.system.java.message}</small>
         </label>
@@ -622,31 +788,81 @@ function LogsModal({ logs, onClose }: { logs: string[]; onClose: () => void }): 
 function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
   const [query, setQuery] = useState('');
   const [projectType, setProjectType] = useState<ModrinthProjectType>('resourcepack');
-  const [sort, setSort] = useState<ModrinthSort>('relevance');
+  const [sort, setSort] = useState<ModrinthSort>('downloads');
   const [results, setResults] = useState<ModrinthProject[]>([]);
   const [busy, setBusy] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [installed, setInstalled] = useState<InstalledModrinthProject[]>([]);
   const [message, setMessage] = useState('Wyszukuj resourcepacki, shaderpacki i opcjonalne client-side mody dla Minecraft 1.21.1.');
+  const loadingResultsRef = useRef(false);
 
-  const search = async (): Promise<void> => {
-    setBusy(true);
-    setMessage('Wyszukiwanie w Modrinth...');
+  const refreshInstalled = useCallback(async (): Promise<void> => {
     try {
-      const next = await api.searchModrinth({ query, projectType, sort });
-      setResults(next);
-      setMessage(next.length ? `Znaleziono ${next.length} wynikow.` : 'Brak wynikow dla tych filtrow.');
+      setInstalled(await api.listInstalledModrinth());
+    } catch {
+      setInstalled([]);
+    }
+  }, []);
+
+  const loadResults = useCallback(async (reset: boolean): Promise<void> => {
+    const nextOffset = reset ? 0 : offset;
+    if (loadingResultsRef.current || (!reset && (!hasMore || busy || loadingMore))) return;
+
+    loadingResultsRef.current = true;
+    if (reset) {
+      setBusy(true);
+      setMessage('Wyszukiwanie w Modrinth...');
+    } else {
+      setLoadingMore(true);
+    }
+
+    try {
+      const next = await api.searchModrinth({
+        query,
+        projectType,
+        sort,
+        offset: nextOffset,
+        limit: MODRINTH_PAGE_SIZE
+      });
+
+      setResults((current) => (reset ? next : [...current, ...next]));
+      setOffset(nextOffset + next.length);
+      setHasMore(next.length === MODRINTH_PAGE_SIZE);
+
+      const total = reset ? next.length : results.length + next.length;
+      setMessage(total ? `Wczytano ${total} wynikow.` : 'Brak wynikow dla tych filtrow.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Nie udalo sie pobrac wynikow Modrinth.');
     } finally {
-      setBusy(false);
+      if (reset) {
+        setBusy(false);
+      } else {
+        setLoadingMore(false);
+      }
+      loadingResultsRef.current = false;
     }
+  }, [busy, hasMore, loadingMore, offset, projectType, query, results.length, sort]);
+
+  useEffect(() => {
+    void refreshInstalled();
+    void loadResults(true);
+  }, [projectType, sort]);
+
+  const handleScroll = (event: UIEvent<HTMLDivElement>): void => {
+    const target = event.currentTarget;
+    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+    if (remaining < 120) void loadResults(false);
   };
 
   const install = async (project: ModrinthProject): Promise<void> => {
     setBusy(true);
     setMessage(`Instalowanie ${project.title}...`);
     try {
-      const result = await api.installModrinth({ projectId: project.projectId, projectType: project.projectType });
+      const result = await api.installModrinth({ projectId: project.projectId, projectType: project.projectType, slug: project.slug });
       setMessage(result.message);
+      await refreshInstalled();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Nie udalo sie zainstalowac dodatku.');
     } finally {
@@ -679,16 +895,19 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
               <option value="newest">Najnowsze</option>
             </select>
           </label>
-          <button className="play-button compact" type="button" onClick={search} disabled={busy}>
+          <button className="play-button compact" type="button" onClick={() => void loadResults(true)} disabled={busy}>
             {busy ? 'Pracuje...' : 'Szukaj'}
           </button>
         </div>
 
         <p className="notice notice-warn">{message}</p>
 
-        <div className="modrinth-results">
-          {results.map((project) => (
-            <article className="modrinth-card" key={project.projectId}>
+        <div className="modrinth-results" onScroll={handleScroll}>
+          {results.map((project) => {
+            const installedAddon = findInstalledAddon(project, installed);
+
+            return (
+            <article className={`modrinth-card ${installedAddon ? 'installed' : ''}`} key={project.projectId}>
               {project.iconUrl ? <img src={project.iconUrl} alt="" /> : <span className="modrinth-icon-placeholder">{project.title.slice(0, 1)}</span>}
               <div>
                 <header>
@@ -699,12 +918,17 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
                 {project.projectType === 'mod' && (
                   <small>Client: {project.clientSide || 'unknown'} · Server: {project.serverSide || 'unknown'}</small>
                 )}
+                {installedAddon && (
+                  <small className="installed-label">Zainstalowany: {installedAddon.fileName}</small>
+                )}
               </div>
-              <button type="button" onClick={() => install(project)} disabled={busy}>
-                Instaluj
+              <button type="button" onClick={() => install(project)} disabled={busy || Boolean(installedAddon)}>
+                {installedAddon ? 'Zainstalowany' : 'Instaluj'}
               </button>
             </article>
-          ))}
+            );
+          })}
+          {loadingMore && <p className="notice notice-warn">Wczytywanie kolejnych wynikow...</p>}
         </div>
       </div>
     </Modal>
@@ -715,6 +939,13 @@ function projectTypeLabel(projectType: ModrinthProjectType): string {
   if (projectType === 'resourcepack') return 'Resourcepack';
   if (projectType === 'shader') return 'Shaderpack';
   return 'Client-side mod';
+}
+
+function findInstalledAddon(project: ModrinthProject, installed: InstalledModrinthProject[]): InstalledModrinthProject | null {
+  return installed.find((item) => {
+    if (item.projectId && item.projectId === project.projectId) return true;
+    return item.slug === project.slug || item.slug.startsWith(`${project.slug}-`);
+  }) ?? null;
 }
 
 function UpdateModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {
@@ -750,9 +981,24 @@ function UpdateModal({ state, onClose }: { state: LauncherState; onClose: () => 
 }
 
 function CrashModal({ crash, onClose }: { crash: CrashInfo; onClose: () => void }): JSX.Element {
+  const [copied, setCopied] = useState(false);
+  const logText = `Exit code: ${crash.exitCode}\n\n${crash.lines.join('\n')}`;
+
+  const copyLog = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(logText);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
   return (
     <Modal title={`Crash gry · exit code ${crash.exitCode}`} onClose={onClose} wide>
       <p className="notice notice-warn">Wklej poniższy log do AI albo wyślij go adminowi.</p>
+      <div className="crash-actions">
+        <button type="button" onClick={copyLog}>{copied ? 'Skopiowano' : 'Skopiuj log'}</button>
+      </div>
       <pre className="logs-view">{crash.lines.join('\n')}</pre>
     </Modal>
   );

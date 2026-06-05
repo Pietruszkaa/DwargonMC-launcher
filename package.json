@@ -6,6 +6,7 @@
   "scripts": {
     "launcher:dev": "npm --prefix launcher run dev",
     "launcher:dev:electron": "npm --prefix launcher run dev:electron",
+    "launcher:clean-dev-data": "npm --prefix launcher run clean:dev-data",
     "launcher:typecheck": "npm --prefix launcher run typecheck",
     "launcher:test": "npm --prefix launcher test",
     "launcher:build": "npm --prefix launcher run build",

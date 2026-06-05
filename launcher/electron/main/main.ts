@@ -5,10 +5,10 @@ import { getAnnouncements, type AnnouncementsStatus } from './announcements';
 import { BACKGROUND_PROTOCOL, listBackgroundUrls, resolveBackgroundRequest } from './backgrounds';
 import { CRASH_LOG_LINES, MAX_LOG_LINES } from './constants';
 import { reinstallCore, type ReinstallCoreResult } from './core';
-import { checkJava } from './java';
+import { checkJava, javaDownloadUrl } from './java';
 import { launchGame, type LaunchStatus } from './game';
 import { loginMicrosoft, refreshMicrosoft, type MclcAuthorization } from './microsoftAuth';
-import { checkModrinthAddonUpdates, installModrinthProject, searchModrinth, type ModrinthInstallRequest, type ModrinthSearchRequest } from './modrinth';
+import { checkModrinthAddonUpdates, installModrinthProject, listInstalledModrinthProjects, searchModrinth, type ModrinthInstallRequest, type ModrinthSearchRequest } from './modrinth';
 import { ensureLauncherDirs, getLauncherPaths, type LauncherPaths } from './paths';
 import { getRamInfo } from './ram';
 import { resolveSetupPaths, type SetupState } from './setup';
@@ -46,6 +46,10 @@ type LauncherState = {
   backgrounds: string[];
   announcements: AnnouncementsStatus;
   update: UpdateStatus;
+  session: {
+    activeStartedAt: string | null;
+    tickAt: string;
+  };
   system: {
     totalRamMb: number;
     maxRamMb: number;
@@ -63,6 +67,7 @@ let backgroundProtocolRegistered = false;
 let healthPollTimer: NodeJS.Timeout | null = null;
 let healthPollInFlight = false;
 let playSessionStartedAt: number | null = null;
+let playSessionTickTimer: NodeJS.Timeout | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 let restoreAfterGameClose = false;
@@ -109,6 +114,10 @@ async function createWindow(): Promise<void> {
     backgrounds: await listBackgroundUrls(paths),
     announcements: await getAnnouncements(paths, settings.backendUrl),
     update: idleUpdateStatus(app.getVersion()),
+    session: {
+      activeStartedAt: null,
+      tickAt: new Date().toISOString()
+    },
     system: {
       ...ram,
       java: await checkJava(settings.javaPath)
@@ -228,9 +237,26 @@ function registerIpc(): void {
     return checkModrinthAddonUpdates(state.playerAddons, app.getVersion());
   });
 
+  ipcMain.handle('launcher:list-installed-modrinth', async () => {
+    state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
+    const addonsForDetection = await listPlayerAddonFiles(paths.minecraftDir, { includeManaged: true });
+    emitState();
+    return listInstalledModrinthProjects(addonsForDetection);
+  });
+
   ipcMain.handle('launcher:open-update-download', async () => {
     const target = state.update.downloadUrl ?? state.update.releaseUrl;
     if (target) await shell.openExternal(target);
+  });
+
+  ipcMain.handle('launcher:refresh-java', async () => {
+    state.system.java = await checkJava(state.settings.javaPath);
+    emitState();
+    return state.system.java;
+  });
+
+  ipcMain.handle('launcher:open-java-download', async () => {
+    await shell.openExternal(javaDownloadUrl());
   });
 
   ipcMain.handle('launcher:reinstall-core', async (): Promise<ReinstallCoreResult> => {
@@ -247,66 +273,7 @@ function registerIpc(): void {
     return result;
   });
 
-  ipcMain.handle('launcher:launch-game', async (_event, request: { nickname: string }) => {
-    let authorization: MclcAuthorization;
-    try {
-      authorization = await resolveAuthorization(request.nickname);
-    } catch (error) {
-      state.launch = {
-        running: false,
-        phase: 'error',
-        message: error instanceof Error ? error.message : 'Nie udało się przygotować konta Microsoft.'
-      };
-      emitState();
-      return state.launch;
-    }
-    const launchNickname = authorization.name ?? request.nickname;
-
-    state.profile = await saveProfile(paths, {
-      ...state.profile,
-      nickname: launchNickname,
-      setupComplete: state.profile.setupComplete
-    });
-    state.system.java = await checkJava(state.settings.javaPath);
-
-    if (!state.system.java.ok) {
-      state.launch = { running: false, phase: 'error', message: state.system.java.message };
-      emitState();
-      return state.launch;
-    }
-
-    state.launch = await launchGame(paths, state.settings, launchNickname, authorization, {
-      onStatus: (launch) => {
-        state.launch = launch;
-        if (launch.phase === 'closed') {
-          void completePlaySession();
-        }
-        emitState();
-      },
-      onLog: appendLog,
-      onCrash: (exitCode) => {
-        mainWindow?.webContents.send('launcher:crash', {
-          exitCode,
-          lines: state.logs.slice(-CRASH_LOG_LINES)
-        });
-      }
-    });
-
-    if (state.settings.closeOnLaunch) {
-      hideToTray(true);
-    }
-
-    if (state.launch.running) {
-      playSessionStartedAt = Date.now();
-      state.profile = await saveProfile(paths, {
-        ...state.profile,
-        launchCount: state.profile.launchCount + 1
-      });
-    }
-
-    emitState();
-    return state.launch;
-  });
+  ipcMain.handle('launcher:launch-game', async (_event, request: { nickname: string }) => launchWithNickname(request.nickname));
 
   ipcMain.handle('launcher:list-managed-files', async () => {
     state.managedFiles = await listManagedLocalFiles(paths.minecraftDir);
@@ -460,11 +427,86 @@ async function resolveAuthorization(nickname: string): Promise<MclcAuthorization
   };
 }
 
+async function launchWithNickname(nickname: string): Promise<LaunchStatus> {
+  if (state.launch.running) return state.launch;
+
+  let authorization: MclcAuthorization;
+  try {
+    authorization = await resolveAuthorization(nickname);
+  } catch (error) {
+    state.launch = {
+      running: false,
+      phase: 'error',
+      message: error instanceof Error ? error.message : 'Nie udało się przygotować konta Microsoft.'
+    };
+    emitState();
+    return state.launch;
+  }
+  const launchNickname = authorization.name ?? nickname;
+
+  state.profile = await saveProfile(paths, {
+    ...state.profile,
+    nickname: launchNickname,
+    setupComplete: state.profile.setupComplete
+  });
+  state.system.java = await checkJava(state.settings.javaPath);
+
+  if (!state.system.java.ok) {
+    state.launch = { running: false, phase: 'error', message: state.system.java.message };
+    emitState();
+    return state.launch;
+  }
+
+  state.launch = await launchGame(paths, state.settings, launchNickname, authorization, {
+    onStatus: (launch) => {
+      state.launch = launch;
+      if (launch.running) {
+        beginPlaySession();
+      }
+      if (launch.phase === 'closed') {
+        void completePlaySession();
+      }
+      emitState();
+    },
+    onLog: appendLog,
+    onCrash: (exitCode) => {
+      mainWindow?.webContents.send('launcher:crash', {
+        exitCode,
+        lines: state.logs.slice(-CRASH_LOG_LINES)
+      });
+    }
+  });
+
+  if (state.settings.closeOnLaunch) {
+    hideToTray(true);
+  }
+
+  emitState();
+  return state.launch;
+}
+
+function beginPlaySession(): void {
+  if (playSessionStartedAt) return;
+
+  playSessionStartedAt = Date.now();
+  state.session = {
+    activeStartedAt: new Date(playSessionStartedAt).toISOString(),
+    tickAt: new Date().toISOString()
+  };
+  state.profile = {
+    ...state.profile,
+    launchCount: state.profile.launchCount + 1
+  };
+  startPlaySessionTicking();
+  emitState();
+}
+
 async function completePlaySession(): Promise<void> {
   if (!playSessionStartedAt) return;
 
   const seconds = Math.max(1, Math.round((Date.now() - playSessionStartedAt) / 1000));
   playSessionStartedAt = null;
+  stopPlaySessionTicking();
 
   state.profile = await saveProfile(paths, {
     ...state.profile,
@@ -472,12 +514,34 @@ async function completePlaySession(): Promise<void> {
     lastSessionSeconds: seconds,
     totalPlaySeconds: state.profile.totalPlaySeconds + seconds
   });
+  state.session = {
+    activeStartedAt: null,
+    tickAt: new Date().toISOString()
+  };
   emitState();
 
   if (restoreAfterGameClose) {
     restoreAfterGameClose = false;
     showMainWindow();
   }
+}
+
+function startPlaySessionTicking(): void {
+  stopPlaySessionTicking();
+  playSessionTickTimer = setInterval(() => {
+    if (!state.session.activeStartedAt) return;
+    state.session = {
+      ...state.session,
+      tickAt: new Date().toISOString()
+    };
+    emitState();
+  }, 60_000);
+}
+
+function stopPlaySessionTicking(): void {
+  if (!playSessionTickTimer) return;
+  clearInterval(playSessionTickTimer);
+  playSessionTickTimer = null;
 }
 
 async function getHealth(backendUrl: string): Promise<ServerHealth> {
@@ -527,6 +591,12 @@ function createTray(): void {
         click: showMainWindow
       },
       {
+        label: 'Start gry',
+        click: () => {
+          void launchFromTray();
+        }
+      },
+      {
         label: 'Otwórz folder gry',
         click: () => {
           void shell.openPath(paths.minecraftDir);
@@ -543,6 +613,23 @@ function createTray(): void {
     ])
   );
   tray.on('click', showMainWindow);
+}
+
+async function launchFromTray(): Promise<void> {
+  if (state.launch.running) {
+    showMainWindow();
+    return;
+  }
+
+  const nickname = state.profile.microsoft?.name ?? state.profile.nickname;
+  if (!/^[A-Za-z0-9_]{3,16}$/.test(nickname)) {
+    appendLog('Tray: ustaw nick w launcherze przed startem gry.');
+    showMainWindow();
+    return;
+  }
+
+  const launch = await launchWithNickname(nickname);
+  if (launch.phase === 'error') showMainWindow();
 }
 
 function hideToTray(restoreAfterGame: boolean): void {
@@ -577,6 +664,7 @@ app.on('before-quit', () => {
 
 app.on('window-all-closed', () => {
   stopHealthPolling();
+  stopPlaySessionTicking();
   if (process.platform !== 'darwin') app.quit();
 });
 

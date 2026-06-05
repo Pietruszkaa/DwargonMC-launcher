@@ -136,6 +136,47 @@
         gap: 10px;
       }
 
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.36);
+        padding: 12px;
+      }
+
+      .metric span {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 16px;
+      }
+
+      .metric.good strong {
+        color: var(--good);
+      }
+
+      .metric.warn strong {
+        color: var(--warn);
+      }
+
+      .metric.bad strong {
+        color: var(--bad);
+      }
+
       .status {
         min-height: 22px;
         color: var(--muted);
@@ -208,6 +249,37 @@
             <button id="loadButton" type="button">Pobierz</button>
             <button id="saveButton" class="primary" type="button">Zapisz</button>
             <button id="formatButton" class="warn" type="button">Formatuj</button>
+            <button id="overviewButton" type="button">Odśwież status</button>
+            <button id="mapButton" type="button">Mapa</button>
+          </div>
+          <div class="panel stack">
+            <h2>Status</h2>
+            <div class="cards">
+              <div id="backendMetric" class="metric">
+                <span>Backend</span>
+                <strong>--</strong>
+              </div>
+              <div id="mcMetric" class="metric">
+                <span>Minecraft</span>
+                <strong>--</strong>
+              </div>
+              <div id="manifestMetric" class="metric">
+                <span>Manifest</span>
+                <strong>--</strong>
+              </div>
+              <div id="backgroundMetric" class="metric">
+                <span>Tła</span>
+                <strong>--</strong>
+              </div>
+              <div id="playersMetric" class="metric">
+                <span>Gracze</span>
+                <strong>--</strong>
+              </div>
+              <div id="mapMetric" class="metric">
+                <span>Mapa</span>
+                <strong>--</strong>
+              </div>
+            </div>
           </div>
           <div class="panel">
             <h2>Podglad</h2>
@@ -230,6 +302,14 @@
       const editor = document.querySelector('#editor');
       const preview = document.querySelector('#preview');
       const status = document.querySelector('#status');
+      const metrics = {
+        backend: document.querySelector('#backendMetric'),
+        mc: document.querySelector('#mcMetric'),
+        manifest: document.querySelector('#manifestMetric'),
+        backgrounds: document.querySelector('#backgroundMetric'),
+        players: document.querySelector('#playersMetric'),
+        map: document.querySelector('#mapMetric')
+      };
 
       backendUrlInput.value = localStorage.getItem('dwargonAdminBackendUrl') || 'https://dwargonmc-sync.petershub.xyz';
       editor.value = JSON.stringify(
@@ -253,9 +333,14 @@
       document.querySelector('#loadButton').addEventListener('click', loadAnnouncements);
       document.querySelector('#saveButton').addEventListener('click', saveAnnouncements);
       document.querySelector('#formatButton').addEventListener('click', formatJson);
+      document.querySelector('#overviewButton').addEventListener('click', refreshOverview);
+      document.querySelector('#mapButton').addEventListener('click', () => {
+        window.open(`${backendBase()}/map/`, '_blank', 'noopener');
+      });
       editor.addEventListener('input', renderPreview);
 
       renderPreview();
+      refreshOverview();
 
       async function loadAnnouncements() {
         saveLocalConfig();
@@ -275,6 +360,68 @@
         } catch (error) {
           setStatus(`Blad pobierania: ${error.message}`, 'bad');
         }
+      }
+
+      async function refreshOverview() {
+        saveLocalConfig();
+        setStatus('Odświeżanie statusu...', '');
+
+        await Promise.all([refreshHealth(), refreshManifest(), refreshMap()]);
+        setStatus('Status odświeżony.', 'good');
+      }
+
+      async function refreshHealth() {
+        try {
+          const health = await fetchJson('/health');
+          setMetric(metrics.backend, 'online', 'good');
+          setMetric(metrics.mc, health.serverOnline ? 'online' : 'offline', health.serverOnline ? 'good' : 'bad');
+          setMetric(metrics.players, playerSummary(health), health.serverOnline ? 'good' : 'warn');
+        } catch (error) {
+          setMetric(metrics.backend, 'offline', 'bad');
+          setMetric(metrics.mc, '--', 'bad');
+          setMetric(metrics.players, '--', 'bad');
+        }
+      }
+
+      async function refreshManifest() {
+        try {
+          const manifest = await fetchJson('/manifest.json');
+          const files = Array.isArray(manifest.files) ? manifest.files.length : 0;
+          const backgrounds = Array.isArray(manifest.backgrounds) ? manifest.backgrounds.length : 0;
+          setMetric(metrics.manifest, `${files} plików`, files > 0 ? 'good' : 'warn');
+          setMetric(metrics.backgrounds, `${backgrounds} teł`, backgrounds > 0 ? 'good' : 'warn');
+        } catch {
+          setMetric(metrics.manifest, 'brak', 'bad');
+          setMetric(metrics.backgrounds, '--', 'bad');
+        }
+      }
+
+      async function refreshMap() {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 3500);
+
+        try {
+          const response = await fetch(`${backendBase()}/map/`, {
+            headers: { Accept: 'text/html,application/json' },
+            signal: controller.signal
+          });
+          setMetric(metrics.map, response.ok ? 'online' : `HTTP ${response.status}`, response.ok ? 'good' : 'bad');
+        } catch {
+          setMetric(metrics.map, 'offline', 'bad');
+        } finally {
+          window.clearTimeout(timer);
+        }
+      }
+
+      async function fetchJson(path) {
+        const response = await fetch(`${backendBase()}${path}`, {
+          headers: {
+            Accept: 'application/json'
+          }
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`);
+        return payload;
       }
 
       async function saveAnnouncements() {
@@ -352,6 +499,17 @@
 
       function saveLocalConfig() {
         localStorage.setItem('dwargonAdminBackendUrl', backendBase());
+      }
+
+      function playerSummary(health) {
+        const online = health.playersOnline ?? (Array.isArray(health.players) ? health.players.length : null);
+        const max = health.playersMax ?? '--';
+        return online === null ? '--' : `${online}/${max}`;
+      }
+
+      function setMetric(element, value, kind) {
+        element.className = `metric ${kind || ''}`;
+        element.querySelector('strong').textContent = value;
       }
 
       function setStatus(message, kind) {

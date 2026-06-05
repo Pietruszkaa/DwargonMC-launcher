@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
     "dev:electron": "node scripts/dev-electron.cjs",
+    "clean:dev-data": "node scripts/clean-dev-data.cjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
     "build": "tsc -p tsconfig.electron.json && tsc --noEmit && vite build",

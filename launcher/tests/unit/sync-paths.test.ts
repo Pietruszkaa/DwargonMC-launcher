@@ -35,4 +35,15 @@ describe('managed file paths', () => {
     expect(files[0].sha1).toHaveLength(40);
     expect(files[0].sha512).toHaveLength(128);
   });
+
+  it('can include managed underscore addon files for Modrinth detection', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dwargon-addons-managed-'));
+    await fs.mkdir(path.join(root, 'mods'), { recursive: true });
+    await fs.writeFile(path.join(root, 'mods', '_sodium.jar'), 'managed sodium');
+
+    const files = await listPlayerAddonFiles(root, { includeManaged: true });
+
+    expect(files.map((file) => file.path)).toEqual(['mods/_sodium.jar']);
+    expect(files[0].kind).toBe('mod');
+  });
 });

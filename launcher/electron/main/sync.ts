@@ -24,6 +24,10 @@ export type PlayerAddonFile = {
   sha512: string;
 };
 
+export type ListAddonFilesOptions = {
+  includeManaged?: boolean;
+};
+
 export type Manifest = {
   version: string;
   generatedAt: string;
@@ -164,7 +168,7 @@ export async function listManagedLocalFiles(minecraftDir: string): Promise<Manag
   );
 }
 
-export async function listPlayerAddonFiles(minecraftDir: string): Promise<PlayerAddonFile[]> {
+export async function listPlayerAddonFiles(minecraftDir: string, options: ListAddonFilesOptions = {}): Promise<PlayerAddonFile[]> {
   const groups: Array<{ kind: PlayerAddonKind; dir: string }> = [
     { kind: 'mod', dir: 'mods' },
     { kind: 'resourcepack', dir: 'resourcepacks' },
@@ -177,7 +181,7 @@ export async function listPlayerAddonFiles(minecraftDir: string): Promise<Player
     const files = await walkFiles(root);
 
     for (const file of files) {
-      if (path.basename(file).startsWith('_')) continue;
+      if (!options.includeManaged && path.basename(file).startsWith('_')) continue;
       if (!isAddonFile(file)) continue;
 
       const stat = await fs.stat(file);

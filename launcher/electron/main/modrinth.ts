@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { MC_VERSION } from './constants';
 import type { LauncherPaths } from './paths';
-import type { PlayerAddonFile } from './sync';
+import { listPlayerAddonFiles, type PlayerAddonFile } from './sync';
 
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 
@@ -15,6 +15,8 @@ export type ModrinthSearchRequest = {
   query: string;
   projectType: ModrinthProjectType;
   sort: ModrinthSort;
+  offset?: number;
+  limit?: number;
 };
 
 export type ModrinthProject = {
@@ -33,6 +35,7 @@ export type ModrinthProject = {
 export type ModrinthInstallRequest = {
   projectId: string;
   projectType: ModrinthProjectType;
+  slug?: string;
 };
 
 export type ModrinthInstallResult = {
@@ -50,6 +53,13 @@ export type ModrinthAddonUpdate = {
   fileName: string | null;
   downloadUrl: string | null;
   message: string;
+};
+
+export type InstalledModrinthProject = {
+  projectId: string | null;
+  slug: string;
+  fileName: string;
+  path: string;
 };
 
 type SearchResponse = {
@@ -79,7 +89,8 @@ export async function searchModrinth(request: ModrinthSearchRequest, appVersion:
       query,
       facets: JSON.stringify(searchFacets(request.projectType)),
       index: request.sort,
-      limit: 20
+      limit: request.limit ?? 20,
+      offset: request.offset ?? 0
     },
     headers: modrinthHeaders(appVersion),
     timeout: 10000,
@@ -109,6 +120,17 @@ export async function installModrinthProject(
   const fileName = safeFileName(file.filename);
   const targetDir = installDir(paths, request.projectType);
   const targetPath = path.join(targetDir, fileName);
+  const existingFile = await installedFileForProject(paths, request, targetPath);
+
+  if (existingFile) {
+    return {
+      installed: false,
+      message: `Ten dodatek jest już zainstalowany: ${existingFile}.`,
+      fileName,
+      targetPath
+    };
+  }
+
   const response = await axios.get<ArrayBuffer>(file.url, {
     responseType: 'arraybuffer',
     headers: modrinthHeaders(appVersion),
@@ -127,6 +149,31 @@ export async function installModrinthProject(
     fileName,
     targetPath
   };
+}
+
+async function installedFileForProject(
+  paths: LauncherPaths,
+  request: ModrinthInstallRequest,
+  targetPath: string
+): Promise<string | null> {
+  try {
+    const stat = await fs.stat(targetPath);
+    if (stat.isFile() && stat.size > 0) return path.basename(targetPath);
+  } catch {
+    // Check hashes below.
+  }
+
+  const files = await listPlayerAddonFiles(paths.minecraftDir, { includeManaged: true });
+  const expectedKind = projectTypeToAddonKind(request.projectType);
+  const bySlug = files.find((file) => file.kind === expectedKind && fileLooksLikeProject(file.name, request.slug ?? request.projectId));
+
+  return bySlug?.name ?? null;
+}
+
+function projectTypeToAddonKind(projectType: ModrinthProjectType): PlayerAddonFile['kind'] {
+  if (projectType === 'resourcepack') return 'resourcepack';
+  if (projectType === 'shader') return 'shader';
+  return 'mod';
 }
 
 export async function checkModrinthAddonUpdates(files: PlayerAddonFile[], appVersion: string): Promise<ModrinthAddonUpdate[]> {
@@ -159,6 +206,58 @@ export async function checkModrinthAddonUpdates(files: PlayerAddonFile[], appVer
   }
 
   return results;
+}
+
+export function listInstalledModrinthProjects(files: PlayerAddonFile[]): InstalledModrinthProject[] {
+  const output: InstalledModrinthProject[] = [];
+  const seen = new Set<string>();
+
+  for (const file of files) {
+    const slug = addonSlugFromFileName(file.name);
+    if (!slug || seen.has(`${file.kind}:${slug}`)) continue;
+
+    seen.add(`${file.kind}:${slug}`);
+    output.push({
+      projectId: null,
+      slug,
+      fileName: file.name,
+      path: file.path
+    });
+  }
+
+  return output;
+}
+
+export function fileLooksLikeProject(fileName: string, projectSlug: string): boolean {
+  const fileSlug = addonSlugFromFileName(fileName);
+  const expected = normalizeSlug(projectSlug);
+  if (!fileSlug || !expected) return false;
+
+  return fileSlug === expected || fileSlug.startsWith(`${expected}-`);
+}
+
+export function addonSlugFromFileName(fileName: string): string {
+  const ext = path.extname(fileName);
+  const base = path.basename(fileName, ext).replace(/^_+/, '');
+  const ignored = new Set(['all', 'client', 'common', 'fabric', 'forge', 'mc', 'minecraft', 'mod', 'neoforge', 'quilt']);
+  const tokens = base
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token && !ignored.has(token) && !isVersionToken(token));
+
+  return tokens.slice(0, 3).join('-');
+}
+
+function normalizeSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .join('-');
+}
+
+function isVersionToken(token: string): boolean {
+  return /^v?\d+(?:\.\d+)*$/.test(token) || /^\d+(?:\.\d+)*[a-z]?/.test(token) || /^mc\d/.test(token);
 }
 
 export function searchFacets(projectType: ModrinthProjectType): string[][] {

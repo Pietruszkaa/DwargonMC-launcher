@@ -107,6 +107,10 @@ let state: LauncherState = {
     notes: '',
     error: null
   },
+  session: {
+    activeStartedAt: null,
+    tickAt: new Date().toISOString()
+  },
   system: {
     totalRamMb: 16384,
     maxRamMb: 12288,
@@ -225,6 +229,16 @@ export function getLauncherApi(): LauncherApi {
         targetPath: `minecraft/${folder}/mock-${request.projectType}.jar`
       };
     },
+    async listInstalledModrinth() {
+      return [
+        {
+          projectId: 'mock-sodium',
+          slug: 'mock-pack',
+          fileName: 'mock-pack.zip',
+          path: 'resourcepacks/mock-pack.zip'
+        }
+      ];
+    },
     async checkAddonUpdates() {
       return state.playerAddons.map((file) => ({
         path: file.path,
@@ -240,6 +254,25 @@ export function getLauncherApi(): LauncherApi {
       return state.update;
     },
     async openUpdateDownload() {
+      return undefined;
+    },
+    async refreshJava() {
+      state = {
+        ...state,
+        system: {
+          ...state.system,
+          java: {
+            ok: true,
+            path: 'java',
+            version: '21',
+            message: 'Mock: Java 21 gotowa.'
+          }
+        }
+      };
+      emitState();
+      return state.system.java;
+    },
+    async openJavaDownload() {
       return undefined;
     },
     async reinstallCore() {

@@ -51,7 +51,14 @@ export async function launchGame(
 
   launcher.on('debug', (line) => events.onLog(String(line)));
   launcher.on('data', (line) => events.onLog(String(line)));
-  launcher.on('progress', (progress) => events.onLog(`Progress: ${JSON.stringify(progress)}`));
+  launcher.on('progress', (progress) => {
+    events.onLog(`Progress: ${JSON.stringify(progress)}`);
+    events.onStatus({
+      running: true,
+      phase: 'launching',
+      message: minecraftDownloadMessage(progress)
+    });
+  });
   launcher.on('close', (code) => {
     const exitCode = typeof code === 'number' ? code : 0;
     events.onStatus({
@@ -160,6 +167,20 @@ export function compareNeoForgeVersions(left: string, right: string): number {
   }
 
   return 0;
+}
+
+export function minecraftDownloadMessage(progress: unknown): string {
+  if (!progress || typeof progress !== 'object') return 'Pobieranie plików Minecraft...';
+
+  const record = progress as Record<string, unknown>;
+  const task = typeof record.task === 'string' ? record.task : typeof record.type === 'string' ? record.type : '';
+  const file = typeof record.name === 'string' ? record.name : typeof record.file === 'string' ? record.file : '';
+  const total = typeof record.total === 'number' ? record.total : null;
+  const current = typeof record.current === 'number' ? record.current : null;
+  const count = total && current ? ` (${current}/${total})` : '';
+  const label = file || task;
+
+  return label ? `Pobieranie Minecraft: ${label}${count}` : `Pobieranie plików Minecraft${count}...`;
 }
 
 export async function purgeStaleForgeMetadata(minecraftDir: string, desiredNeoForgeVersion: string, events?: GameEvents): Promise<boolean> {

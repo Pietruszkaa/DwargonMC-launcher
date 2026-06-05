@@ -111,6 +111,10 @@ export type LauncherState = {
   backgrounds: string[];
   announcements: AnnouncementsStatus;
   update: UpdateStatus;
+  session: {
+    activeStartedAt: string | null;
+    tickAt: string;
+  };
   system: {
     totalRamMb: number;
     maxRamMb: number;
@@ -171,6 +175,8 @@ export type ModrinthSearchRequest = {
   query: string;
   projectType: ModrinthProjectType;
   sort: ModrinthSort;
+  offset?: number;
+  limit?: number;
 };
 
 export type ModrinthProject = {
@@ -189,6 +195,7 @@ export type ModrinthProject = {
 export type ModrinthInstallRequest = {
   projectId: string;
   projectType: ModrinthProjectType;
+  slug?: string;
 };
 
 export type ModrinthInstallResult = {
@@ -208,6 +215,13 @@ export type ModrinthAddonUpdate = {
   message: string;
 };
 
+export type InstalledModrinthProject = {
+  projectId: string | null;
+  slug: string;
+  fileName: string;
+  path: string;
+};
+
 export type LauncherApi = {
   getState(): Promise<LauncherState>;
   saveSettings(settings: LauncherSettings): Promise<LauncherSettings>;
@@ -219,9 +233,12 @@ export type LauncherApi = {
   refreshAnnouncements(): Promise<AnnouncementsStatus>;
   searchModrinth(request: ModrinthSearchRequest): Promise<ModrinthProject[]>;
   installModrinth(request: ModrinthInstallRequest): Promise<ModrinthInstallResult>;
+  listInstalledModrinth(): Promise<InstalledModrinthProject[]>;
   checkAddonUpdates(): Promise<ModrinthAddonUpdate[]>;
   checkUpdate(): Promise<UpdateStatus>;
   openUpdateDownload(): Promise<void>;
+  refreshJava(): Promise<JavaCheckResult>;
+  openJavaDownload(): Promise<void>;
   reinstallCore(): Promise<ReinstallCoreResult>;
   launchGame(request: LaunchRequest): Promise<LaunchStatus>;
   listManagedFiles(): Promise<ManagedFile[]>;

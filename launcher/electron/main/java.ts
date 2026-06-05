@@ -2,6 +2,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
+const ORACLE_JAVA_21_WINDOWS_INSTALLER_URL = 'https://download.oracle.com/java/21/latest/jdk-21_windows-x64_bin.exe';
+const ORACLE_JAVA_21_DOWNLOAD_PAGE_URL = 'https://www.oracle.com/java/technologies/downloads/#java21';
 
 export type JavaCheckResult = {
   ok: boolean;
@@ -56,4 +58,8 @@ export function parseJavaVersion(output: string): number | null {
   const match = output.match(/version "(?<version>\d+)(?:\.\d+)?(?:\.\d+)?/);
   const version = match?.groups?.version;
   return version ? Number(version) : null;
+}
+
+export function javaDownloadUrl(platform = process.platform): string {
+  return platform === 'win32' ? ORACLE_JAVA_21_WINDOWS_INSTALLER_URL : ORACLE_JAVA_21_DOWNLOAD_PAGE_URL;
 }
