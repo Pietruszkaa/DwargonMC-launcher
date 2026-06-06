@@ -39,7 +39,7 @@ describe('NeoForge version resolver helpers', () => {
     await fs.mkdir(forgeDir, { recursive: true });
     await fs.writeFile(path.join(forgeDir, 'version.json'), '{\"id\":\"neoforge-21.1.200\"}');
 
-    await expect(purgeStaleForgeMetadata(root, '21.1.233')).resolves.toBe(true);
+    await expect(purgeStaleForgeMetadata(root, '1.21.1', '21.1.233')).resolves.toBe(true);
     await expect(fs.stat(forgeDir)).rejects.toThrow();
   });
 

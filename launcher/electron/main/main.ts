@@ -1,19 +1,21 @@
-import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, net, protocol, shell } from 'electron';
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, net, protocol, shell, type NativeImage } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getAnnouncements, type AnnouncementsStatus } from './announcements';
 import { BACKGROUND_PROTOCOL, listBackgroundUrls, resolveBackgroundRequest } from './backgrounds';
-import { CRASH_LOG_LINES, LAUNCHER_NAME, MAX_LOG_LINES } from './constants';
+import { CRASH_LOG_LINES, LAUNCHER_NAME, MAX_LOG_LINES, MC_VERSION } from './constants';
 import { reinstallCore, type ReinstallCoreResult } from './core';
-import { checkJava, downloadJavaInstaller, javaDownloadPageUrl } from './java';
-import { launchGame, type LaunchStatus } from './game';
+import { checkJava, downloadJavaInstaller, idleJavaInstallerStatus, javaDownloadPageUrl, type JavaInstallerResult } from './java';
+import { checkMinecraftInstanceReady, launchGame, type LaunchStatus } from './game';
 import { readMinecraftOptions, saveMinecraftOptions } from './minecraftOptions';
 import { loginMicrosoft, refreshMicrosoft, type MclcAuthorization } from './microsoftAuth';
-import { checkModrinthAddonUpdates, installModrinthProject, listInstalledModrinthProjects, searchModrinth, type ModrinthInstallRequest, type ModrinthSearchRequest } from './modrinth';
-import { ensureLauncherDirs, getLauncherPaths, type LauncherPaths } from './paths';
+import { checkModrinthAddonUpdates, identifyInstalledModrinthProjects, installModrinthProject, readSearchCache, searchModrinth, type ModrinthInstallRequest, type ModrinthSearchRequest } from './modrinth';
+import { buildLauncherPaths, ensureLauncherDirs, getLauncherPaths, type LauncherPaths } from './paths';
 import { getRamInfo } from './ram';
+import { activateServer, activeServer, addServer, readServerRegistry, type ServerMinecraftConfig, type ServerRegistry } from './servers';
 import { resolveSetupPaths, type SetupState } from './setup';
-import { listManagedLocalFiles, listPlayerAddonFiles, removePlayerAddonFile, runSync, type ManagedFile, type PlayerAddonFile, type PlayerAddonKind, type SyncStatus } from './sync';
+import { checkSyncPlan, listManagedLocalFiles, listPlayerAddonFiles, removePlayerAddonFile, runSync, type ManagedFile, type PlayerAddonFile, type PlayerAddonKind, type SyncStatus } from './sync';
 import {
   readProfile,
   readSettings,
@@ -23,7 +25,7 @@ import {
   type LauncherSettings
 } from './storage';
 import { offlineUuid } from './validation';
-import { checkForLauncherUpdate, idleUpdateStatus, type UpdateStatus } from './updater';
+import { checkForLauncherUpdate, downloadLauncherUpdate, idleUpdateStatus, type UpdateStatus } from './updater';
 
 type ServerHealth = {
   ok: boolean;
@@ -38,6 +40,7 @@ type LauncherState = {
   setup: SetupState;
   settings: LauncherSettings;
   profile: LauncherProfile;
+  servers: ServerRegistry;
   health: ServerHealth;
   sync: SyncStatus;
   launch: LaunchStatus;
@@ -56,6 +59,7 @@ type LauncherState = {
     maxRamMb: number;
     defaultRamMb: number;
     java: Awaited<ReturnType<typeof checkJava>>;
+    javaInstaller: JavaInstallerResult;
   };
 };
 
@@ -63,6 +67,7 @@ const HEALTH_POLL_MS = 15_000;
 
 let mainWindow: BrowserWindow | null = null;
 let paths: LauncherPaths;
+let basePaths: LauncherPaths;
 let state: LauncherState;
 let backgroundProtocolRegistered = false;
 let healthPollTimer: NodeJS.Timeout | null = null;
@@ -91,11 +96,18 @@ async function createWindow(): Promise<void> {
     portableExecutableDir: process.env.PORTABLE_EXECUTABLE_DIR,
     portableExecutableFile: process.env.PORTABLE_EXECUTABLE_FILE
   });
-  paths = setupResolution.paths;
+  basePaths = setupResolution.paths;
+  const initialServers = await readServerRegistry(basePaths);
+  const selectedServer = activeServer(initialServers);
+  paths = selectedServer ? buildLauncherPaths(basePaths.installDir, basePaths.appDir, selectedServer.instanceId) : basePaths;
   await ensureLauncherDirs(paths);
   registerBackgroundProtocol();
 
-  const settings = await readSettings(paths);
+  const settings = {
+    ...(await readSettings(paths)),
+    backendUrl: selectedServer?.backendUrl ?? ''
+  };
+  if (selectedServer) await saveSettings(paths, settings);
   const profile = await readProfile(paths);
   const ram = getRamInfo();
 
@@ -107,6 +119,7 @@ async function createWindow(): Promise<void> {
     },
     settings,
     profile,
+    servers: initialServers,
     health: await getHealth(settings.backendUrl),
     sync: idleSync(),
     launch: { running: false, phase: 'idle', message: 'Gotowy.' },
@@ -122,7 +135,8 @@ async function createWindow(): Promise<void> {
     },
     system: {
       ...ram,
-      java: await checkJava(settings.javaPath)
+      java: await checkJava(settings.javaPath),
+      javaInstaller: idleJavaInstallerStatus()
     }
   };
 
@@ -145,6 +159,15 @@ async function createWindow(): Promise<void> {
     if (isQuitting) return;
     event.preventDefault();
     void handleMainWindowClose();
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    void safeOpenExternal(url);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isAllowedAppNavigation(url)) return;
+    event.preventDefault();
+    void safeOpenExternal(url);
   });
   createTray();
 
@@ -169,6 +192,22 @@ function registerIpc(): void {
     await refreshHealth();
     await refreshAnnouncements();
     return state.settings;
+  });
+
+  ipcMain.handle('launcher:add-server', async (_event, backendUrl: string) => {
+    const registry = await addServer(basePaths, state.servers, backendUrl);
+    const server = activeServer(registry);
+    if (!server) return state;
+    await switchToServer(registry, server.instanceId);
+    return state;
+  });
+
+  ipcMain.handle('launcher:switch-server', async (_event, serverId: string) => {
+    const registry = await activateServer(basePaths, state.servers, serverId);
+    const server = activeServer(registry);
+    if (!server) return state;
+    await switchToServer(registry, server.instanceId);
+    return state;
   });
 
   ipcMain.handle('launcher:save-profile', async (_event, profile: LauncherProfile) => {
@@ -216,17 +255,18 @@ function registerIpc(): void {
   });
 
   ipcMain.handle('launcher:run-sync', () => performStartupSync());
+  ipcMain.handle('launcher:apply-sync', () => applySync());
 
   ipcMain.handle('launcher:check-update', () => refreshUpdateStatus());
 
   ipcMain.handle('launcher:refresh-announcements', () => refreshAnnouncements());
 
   ipcMain.handle('launcher:search-modrinth', async (_event, request: ModrinthSearchRequest) => {
-    return searchModrinth(request, app.getVersion());
+    return searchModrinth(paths, request, app.getVersion(), activeMinecraft());
   });
 
   ipcMain.handle('launcher:install-modrinth', async (_event, request: ModrinthInstallRequest) => {
-    const result = await installModrinthProject(paths, request, app.getVersion());
+    const result = await installModrinthProject(paths, request, app.getVersion(), activeMinecraft());
     appendLog(result.message);
     state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
     emitState();
@@ -236,14 +276,18 @@ function registerIpc(): void {
   ipcMain.handle('launcher:check-addon-updates', async () => {
     state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
     emitState();
-    return checkModrinthAddonUpdates(state.playerAddons, app.getVersion());
+    return checkModrinthAddonUpdates(state.playerAddons, app.getVersion(), activeMinecraft());
   });
 
   ipcMain.handle('launcher:list-installed-modrinth', async () => {
     state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
     const addonsForDetection = await listPlayerAddonFiles(paths.minecraftDir, { includeManaged: true });
     emitState();
-    return listInstalledModrinthProjects(addonsForDetection);
+    return identifyInstalledModrinthProjects(paths, addonsForDetection, app.getVersion(), activeMinecraft());
+  });
+
+  ipcMain.handle('launcher:get-modrinth-cache', async () => {
+    return readSearchCache(paths);
   });
 
   ipcMain.handle('launcher:remove-player-addon', async (_event, relativePath: string) => {
@@ -255,8 +299,38 @@ function registerIpc(): void {
   });
 
   ipcMain.handle('launcher:open-update-download', async () => {
-    const target = state.update.downloadUrl ?? state.update.releaseUrl;
-    if (target) await shell.openExternal(target);
+    const target = state.update.releaseUrl ?? state.update.downloadUrl;
+    if (target) await safeOpenExternal(target);
+  });
+
+  ipcMain.handle('launcher:download-update', async () => {
+    if (state.update.download.phase === 'downloading' || state.update.download.phase === 'verifying') {
+      return state.update.download;
+    }
+
+    const result = await downloadLauncherUpdate(
+      state.update,
+      paths.launcherDataDir,
+      (download) => {
+        state.update = { ...state.update, download };
+        emitState();
+      },
+      app.getVersion()
+    );
+
+    if (result.phase === 'ready' && result.filePath) {
+      shell.showItemInFolder(result.filePath);
+      appendLog(`Aktualizacja pobrana: ${result.filePath}`);
+    } else if (result.phase === 'error') {
+      appendLog(`Błąd pobierania aktualizacji: ${result.message}`);
+    }
+
+    return result;
+  });
+
+  ipcMain.handle('launcher:show-downloaded-update', async () => {
+    const filePath = state.update.download.filePath;
+    if (filePath) shell.showItemInFolder(filePath);
   });
 
   ipcMain.handle('launcher:refresh-java', async () => {
@@ -266,21 +340,28 @@ function registerIpc(): void {
   });
 
   ipcMain.handle('launcher:download-java-installer', async () => {
-    const result = await downloadJavaInstaller(paths.launcherDataDir);
-    if (result.path) {
-      await shell.openPath(result.path);
-    } else {
-      await shell.openExternal(javaDownloadPageUrl());
-    }
+    if (state.system.javaInstaller.phase === 'downloading') return state.system.javaInstaller;
+
+    const result = await downloadJavaInstaller(paths.launcherDataDir, (javaInstaller) => {
+      state.system = { ...state.system, javaInstaller };
+      emitState();
+    });
     appendLog(result.message);
-    return {
-      ...result,
-      started: Boolean(result.path)
-    };
+    return result;
+  });
+
+  ipcMain.handle('launcher:open-java-installer', async () => {
+    const installerPath = state.system.javaInstaller.path;
+    if (installerPath) {
+      await shell.openPath(installerPath);
+      return;
+    }
+
+    await safeOpenExternal(javaDownloadPageUrl());
   });
 
   ipcMain.handle('launcher:open-java-download-page', async () => {
-    await shell.openExternal(javaDownloadPageUrl());
+    await safeOpenExternal(javaDownloadPageUrl());
   });
 
   ipcMain.handle('launcher:reinstall-core', async (): Promise<ReinstallCoreResult> => {
@@ -365,6 +446,32 @@ function registerIpc(): void {
 }
 
 async function performStartupSync(): Promise<SyncStatus> {
+  if (!state.settings.backendUrl) {
+    state.sync = {
+      phase: 'idle',
+      verified: false,
+      message: 'Dodaj serwer, żeby synchronizować pliki.',
+      completedFiles: 0,
+      totalFiles: 0
+    };
+    emitState();
+    return state.sync;
+  }
+
+  state.sync = await checkSyncPlan(paths, state.settings.backendUrl, (sync) => {
+    state.sync = sync;
+    emitState();
+  });
+  state.managedFiles = await listManagedLocalFiles(paths.minecraftDir);
+  state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
+  state.backgrounds = await listBackgroundUrls(paths);
+  emitState();
+  return state.sync;
+}
+
+async function applySync(): Promise<SyncStatus> {
+  if (!state.settings.backendUrl) return performStartupSync();
+
   state.sync = await runSync(paths, state.settings.backendUrl, (sync) => {
     state.sync = sync;
     emitState();
@@ -402,6 +509,12 @@ async function refreshHealth(): Promise<void> {
 }
 
 async function refreshAnnouncements(): Promise<AnnouncementsStatus> {
+  if (!state.settings.backendUrl) {
+    state.announcements = { items: [], cached: false, error: null };
+    emitState();
+    return state.announcements;
+  }
+
   state.announcements = await getAnnouncements(paths, state.settings.backendUrl);
   emitState();
   return state.announcements;
@@ -418,6 +531,38 @@ async function refreshUpdateStatus(): Promise<UpdateStatus> {
   state.update = await checkForLauncherUpdate(app.getVersion());
   emitState();
   return state.update;
+}
+
+async function switchToServer(registry: ServerRegistry, instanceId: string): Promise<void> {
+  if (state.launch.running) throw new Error('Zamknij Minecraft przed zmianą serwera.');
+
+  paths = buildLauncherPaths(basePaths.installDir, basePaths.appDir, instanceId);
+  await ensureLauncherDirs(paths);
+  const server = activeServer(registry);
+  const settings = {
+    ...(await readSettings(paths)),
+    backendUrl: server?.backendUrl ?? ''
+  };
+  state.servers = registry;
+  state.settings = await saveSettings(paths, settings);
+  state.profile = await readProfile(paths);
+  state.setup = {
+    ...state.setup,
+    activeInstallDir: paths.activeInstanceDir,
+    suggestedDir: null
+  };
+  state.health = await getHealth(state.settings.backendUrl);
+  state.sync = idleSync();
+  state.managedFiles = await listManagedLocalFiles(paths.minecraftDir);
+  state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
+  state.backgrounds = await listBackgroundUrls(paths);
+  state.announcements = await getAnnouncements(paths, state.settings.backendUrl);
+  state.session = {
+    activeStartedAt: null,
+    tickAt: new Date().toISOString()
+  };
+  emitState();
+  void performStartupSync();
 }
 
 function appendLog(line: string): void {
@@ -462,6 +607,18 @@ async function resolveAuthorization(nickname: string): Promise<MclcAuthorization
 async function launchWithNickname(nickname: string): Promise<LaunchStatus> {
   if (state.launch.running) return state.launch;
 
+  const instanceCheck = await checkMinecraftInstanceReady(paths, activeMinecraft());
+  if (!instanceCheck.ready) {
+    state.launch = {
+      running: false,
+      phase: 'error',
+      message: instanceCheck.message
+    };
+    mainWindow?.webContents.send('launcher:instance-required', instanceCheck);
+    emitState();
+    return state.launch;
+  }
+
   let authorization: MclcAuthorization;
   try {
     authorization = await resolveAuthorization(nickname);
@@ -489,25 +646,32 @@ async function launchWithNickname(nickname: string): Promise<LaunchStatus> {
     return state.launch;
   }
 
-  state.launch = await launchGame(paths, state.settings, launchNickname, authorization, {
-    onStatus: (launch) => {
-      state.launch = launch;
-      if (launch.running) {
-        beginPlaySession();
+  state.launch = await launchGame(
+    paths,
+    state.settings,
+    launchNickname,
+    authorization,
+    {
+      onStatus: (launch) => {
+        state.launch = launch;
+        if (launch.running) {
+          beginPlaySession();
+        }
+        if (launch.phase === 'closed') {
+          void completePlaySession();
+        }
+        emitState();
+      },
+      onLog: appendLog,
+      onCrash: (exitCode) => {
+        mainWindow?.webContents.send('launcher:crash', {
+          exitCode,
+          lines: state.logs.slice(-CRASH_LOG_LINES)
+        });
       }
-      if (launch.phase === 'closed') {
-        void completePlaySession();
-      }
-      emitState();
     },
-    onLog: appendLog,
-    onCrash: (exitCode) => {
-      mainWindow?.webContents.send('launcher:crash', {
-        exitCode,
-        lines: state.logs.slice(-CRASH_LOG_LINES)
-      });
-    }
-  });
+    activeServer(state.servers)?.minecraft
+  );
 
   if (state.settings.closeOnLaunch) {
     hideToTray(true);
@@ -577,6 +741,17 @@ function stopPlaySessionTicking(): void {
 }
 
 async function getHealth(backendUrl: string): Promise<ServerHealth> {
+  if (!backendUrl) {
+    return {
+      ok: false,
+      serverOnline: false,
+      playersOnline: null,
+      playersMax: null,
+      players: [],
+      message: 'Dodaj serwer, żeby sprawdzić status.'
+    };
+  }
+
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
@@ -607,6 +782,15 @@ function idleSync(): SyncStatus {
   };
 }
 
+function activeMinecraft(): ServerMinecraftConfig {
+  return activeServer(state.servers)?.minecraft ?? {
+    address: null,
+    version: MC_VERSION,
+    loader: 'neoforge',
+    loaderVersion: null
+  };
+}
+
 function emitState(): void {
   mainWindow?.webContents.send('launcher:state', state);
 }
@@ -614,7 +798,20 @@ function emitState(): void {
 function createTray(): void {
   if (tray) return;
 
-  tray = new Tray(path.join(paths.bundledAssetsDir, 'icon.png'));
+  const icon = loadTrayIcon();
+  if (!icon) {
+    appendLog('Tray wyłączony: nie znaleziono poprawnej ikony w assets/icon.png albo assets/icon.ico.');
+    return;
+  }
+
+  try {
+    tray = new Tray(icon);
+  } catch (error) {
+    tray = null;
+    appendLog(`Tray wyłączony: ${error instanceof Error ? error.message : 'nie udało się utworzyć ikony tray.'}`);
+    return;
+  }
+
   tray.setToolTip(LAUNCHER_NAME);
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -666,8 +863,28 @@ async function launchFromTray(): Promise<void> {
 
 function hideToTray(restoreAfterGame: boolean): void {
   if (!mainWindow) return;
+  if (!tray) {
+    mainWindow.minimize();
+    return;
+  }
+
   restoreAfterGameClose = restoreAfterGameClose || restoreAfterGame;
   mainWindow.hide();
+}
+
+function loadTrayIcon(): NativeImage | null {
+  const candidates = [
+    path.join(paths.bundledAssetsDir, 'icon.png'),
+    path.join(paths.bundledAssetsDir, 'icon.ico')
+  ];
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    const image = nativeImage.createFromPath(candidate);
+    if (!image.isEmpty()) return image;
+  }
+
+  return null;
 }
 
 async function handleMainWindowClose(): Promise<void> {
@@ -719,6 +936,25 @@ function showMainWindow(): void {
   if (!mainWindow) return;
   mainWindow.show();
   mainWindow.focus();
+}
+
+async function safeOpenExternal(url: string): Promise<void> {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      appendLog(`Zablokowano zewnętrzny link z niedozwolonym schematem: ${parsed.protocol}`);
+      return;
+    }
+
+    await shell.openExternal(parsed.toString());
+  } catch {
+    appendLog('Zablokowano niepoprawny zewnętrzny link.');
+  }
+}
+
+function isAllowedAppNavigation(url: string): boolean {
+  if (process.env.VITE_DEV_SERVER_URL && url.startsWith(process.env.VITE_DEV_SERVER_URL)) return true;
+  return false;
 }
 
 function registerBackgroundProtocol(): void {

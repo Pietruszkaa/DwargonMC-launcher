@@ -17,6 +17,7 @@ files/
 backgrounds/
 manifest.json
 announcements.json
+server.json
 ```
 
 Generate manifest:
@@ -24,3 +25,5 @@ Generate manifest:
 ```bash
 docker compose exec sync-server node generate-manifest.js /data
 ```
+
+`server.json` moze byc edytowany przez admin-site. `MC_LOADER_VERSION=latest` oznacza automatyczne dobranie najnowszego wspieranego NeoForge po stronie launchera.

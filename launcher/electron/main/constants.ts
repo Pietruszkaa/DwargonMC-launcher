@@ -1,9 +1,9 @@
 export const MC_VERSION = '1.21.1';
 export const MIN_NEOFORGE_VERSION = '21.1.230';
-export const LAUNCHER_NAME = process.env.DWARGONMC_LAUNCHER_NAME || 'DwargonMC Launcher';
-export const SERVER_HOST = process.env.DWARGONMC_SERVER_HOST || 'dwargonmc.playit.plus';
+export const LAUNCHER_NAME = process.env.DWARGONMC_LAUNCHER_NAME || 'Dwargon Launcher';
+export const SERVER_HOST = process.env.DWARGONMC_SERVER_HOST || '';
 export const SERVER_PORT = 25565;
-export const DEFAULT_BACKEND_URL = process.env.DWARGONMC_BACKEND_URL || 'https://dwargonmc-sync.petershub.xyz';
+export const DEFAULT_BACKEND_URL = process.env.DWARGONMC_BACKEND_URL || '';
 export const GITHUB_RELEASE_REPO = process.env.DWARGONMC_GITHUB_RELEASE_REPO || 'Pietruszkaa/DwargonMC-launcher';
 export const MAX_LOG_LINES = 1000;
 export const CRASH_LOG_LINES = 100;

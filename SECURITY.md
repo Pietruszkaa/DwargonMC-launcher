@@ -10,7 +10,7 @@ Do not open a public issue for sensitive vulnerabilities. Use GitHub private vul
 
 Include:
 
-- affected component: `launcher`, `sync-server`, `admin-site`, `download-site`, or CI/release;
+- affected component: `launcher`, `sync-server`, `admin-site`, or CI/release;
 - reproduction steps;
 - impact;
 - affected version/commit;
@@ -31,6 +31,7 @@ Known unresolved npm audit findings may remain from `minecraft-launcher-core -> 
 Never commit:
 
 - `ADMIN_TOKEN`;
+- `SERVER_PASSWORD`;
 - `VIRUSTOTAL_API_KEY`;
 - Microsoft account tokens;
 - local launcher profiles;
@@ -40,6 +41,6 @@ Never commit:
 ## Runtime Security Notes
 
 - Public sync-server endpoints are intended to be read-only.
-- Admin write endpoints require a bearer token.
+- Admin write endpoints require a bearer token when `ADMIN_TOKEN` is set.
 - The launcher should keep Electron preload APIs narrow and avoid exposing generic filesystem or shell access to the renderer.
 - External links opened by the launcher should be limited to expected HTTP/HTTPS URLs.

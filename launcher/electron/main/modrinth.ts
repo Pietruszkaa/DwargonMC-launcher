@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { MC_VERSION } from './constants';
 import type { LauncherPaths } from './paths';
+import type { ServerMinecraftConfig } from './servers';
 import { listPlayerAddonFiles, type PlayerAddonFile } from './sync';
 
 const MODRINTH_API = 'https://api.modrinth.com/v2';
@@ -84,12 +85,36 @@ type VersionResponse = Array<{
   }>;
 }>;
 
-export async function searchModrinth(request: ModrinthSearchRequest, appVersion: string): Promise<ModrinthProject[]> {
+type DetectionCache = Record<
+  string,
+  {
+    projectId: string | null;
+    versionNumber: string | null;
+    checkedAt: string;
+  }
+>;
+
+export type ModrinthSearchCache = {
+  query: string;
+  projectType: ModrinthProjectType;
+  sort: ModrinthSort;
+  gameVersion: string;
+  loader: string;
+  results: ModrinthProject[];
+  updatedAt: string;
+} | null;
+
+export async function searchModrinth(
+  paths: LauncherPaths,
+  request: ModrinthSearchRequest,
+  appVersion: string,
+  minecraft: ServerMinecraftConfig
+): Promise<ModrinthProject[]> {
   const query = request.query.trim();
   const response = await axios.get<SearchResponse>(`${MODRINTH_API}/search`, {
     params: {
       query,
-      facets: JSON.stringify(searchFacets(request.projectType)),
+      facets: JSON.stringify(searchFacets(request.projectType, minecraft.version, minecraft.loader)),
       index: request.sort,
       limit: request.limit ?? 20,
       offset: request.offset ?? 0
@@ -99,15 +124,18 @@ export async function searchModrinth(request: ModrinthSearchRequest, appVersion:
     validateStatus: (code) => code === 200
   });
 
-  return (response.data.hits ?? []).map(normalizeProject).filter((project): project is ModrinthProject => Boolean(project));
+  const results = (response.data.hits ?? []).map(normalizeProject).filter((project): project is ModrinthProject => Boolean(project));
+  if ((request.offset ?? 0) === 0) await writeSearchCache(paths, request, minecraft, results);
+  return results;
 }
 
 export async function installModrinthProject(
   paths: LauncherPaths,
   request: ModrinthInstallRequest,
-  appVersion: string
+  appVersion: string,
+  minecraft: ServerMinecraftConfig
 ): Promise<ModrinthInstallResult> {
-  const version = await findInstallableVersion(request, appVersion);
+  const version = await findInstallableVersion(request, appVersion, minecraft);
   const file = version?.files?.find((candidate) => candidate.primary) ?? version?.files?.[0];
 
   if (!version || !file?.url || !file.filename) {
@@ -122,7 +150,7 @@ export async function installModrinthProject(
   const fileName = safeFileName(file.filename);
   const targetDir = installDir(paths, request.projectType);
   const targetPath = path.join(targetDir, fileName);
-  const existingFile = await installedFileForProject(paths, request, targetPath);
+  const existingFile = await installedFileForProject(paths, request, targetPath, appVersion, minecraft);
 
   if (existingFile) {
     return {
@@ -156,7 +184,9 @@ export async function installModrinthProject(
 async function installedFileForProject(
   paths: LauncherPaths,
   request: ModrinthInstallRequest,
-  targetPath: string
+  targetPath: string,
+  appVersion: string,
+  minecraft: ServerMinecraftConfig
 ): Promise<string | null> {
   try {
     const stat = await fs.stat(targetPath);
@@ -168,8 +198,13 @@ async function installedFileForProject(
   const files = await listPlayerAddonFiles(paths.minecraftDir, { includeManaged: true });
   const expectedKind = projectTypeToAddonKind(request.projectType);
   const bySlug = files.find((file) => file.kind === expectedKind && fileLooksLikeProject(file.name, request.slug ?? request.projectId));
+  if (bySlug) return bySlug.name;
 
-  return bySlug?.name ?? null;
+  const identified = await identifyInstalledModrinthProjects(paths, files, appVersion, minecraft);
+  const byProject = identified.find((file) => file.projectId === request.projectId);
+  if (byProject) return byProject.fileName;
+
+  return null;
 }
 
 function projectTypeToAddonKind(projectType: ModrinthProjectType): PlayerAddonFile['kind'] {
@@ -178,12 +213,16 @@ function projectTypeToAddonKind(projectType: ModrinthProjectType): PlayerAddonFi
   return 'mod';
 }
 
-export async function checkModrinthAddonUpdates(files: PlayerAddonFile[], appVersion: string): Promise<ModrinthAddonUpdate[]> {
+export async function checkModrinthAddonUpdates(
+  files: PlayerAddonFile[],
+  appVersion: string,
+  minecraft: ServerMinecraftConfig
+): Promise<ModrinthAddonUpdate[]> {
   const results: ModrinthAddonUpdate[] = [];
 
   for (const file of files) {
     try {
-      const latest = await latestVersionFromHash(file, appVersion);
+      const latest = await latestVersionFromHash(file, appVersion, minecraft);
       const primary = latest.files?.find((candidate) => candidate.primary) ?? latest.files?.[0] ?? null;
 
       if (!primary?.filename || !primary.url) {
@@ -232,6 +271,50 @@ export function listInstalledModrinthProjects(files: PlayerAddonFile[]): Install
   return output;
 }
 
+export async function identifyInstalledModrinthProjects(
+  paths: LauncherPaths,
+  files: PlayerAddonFile[],
+  appVersion: string,
+  minecraft: ServerMinecraftConfig
+): Promise<InstalledModrinthProject[]> {
+  const cache = await readDetectionCache(paths);
+  let dirty = false;
+
+  const items = await Promise.all(
+    listInstalledModrinthProjects(files).map(async (item) => {
+      const file = files.find((candidate) => candidate.path === item.path);
+      if (!file?.sha512) return item;
+
+      const cached = cache[file.sha512];
+      if (cached && Date.now() - Date.parse(cached.checkedAt) < 7 * 24 * 60 * 60 * 1000) {
+        return { ...item, projectId: cached.projectId };
+      }
+
+      try {
+        const version = await versionFromHash(file.sha512, appVersion);
+        cache[file.sha512] = {
+          projectId: version.project_id ?? null,
+          versionNumber: version.version_number ?? null,
+          checkedAt: new Date().toISOString()
+        };
+        dirty = true;
+        return { ...item, projectId: version.project_id ?? null };
+      } catch {
+        cache[file.sha512] = {
+          projectId: null,
+          versionNumber: null,
+          checkedAt: new Date().toISOString()
+        };
+        dirty = true;
+        return item;
+      }
+    })
+  );
+
+  if (dirty) await writeDetectionCache(paths, cache);
+  return items.filter((item) => item.kind !== 'mod' || minecraft.loader === 'neoforge' || !item.managed);
+}
+
 export function fileLooksLikeProject(fileName: string, projectSlug: string): boolean {
   const fileSlug = addonSlugFromFileName(fileName);
   const expected = normalizeSlug(projectSlug);
@@ -264,11 +347,11 @@ function isVersionToken(token: string): boolean {
   return /^v?\d+(?:\.\d+)*$/.test(token) || /^\d+(?:\.\d+)*[a-z]?/.test(token) || /^mc\d/.test(token);
 }
 
-export function searchFacets(projectType: ModrinthProjectType): string[][] {
-  const facets = [[`project_type:${projectType}`], [`versions:${MC_VERSION}`]];
+export function searchFacets(projectType: ModrinthProjectType, gameVersion = MC_VERSION, loader = 'neoforge'): string[][] {
+  const facets = [[`project_type:${projectType}`], [`versions:${gameVersion}`]];
 
   if (projectType === 'mod') {
-    facets.push(['categories:neoforge']);
+    if (loader !== 'vanilla') facets.push([`categories:${loader}`]);
     facets.push(['client_side:required', 'client_side:optional']);
     facets.push(['server_side:unsupported', 'server_side:optional']);
   }
@@ -280,12 +363,16 @@ export function searchFacets(projectType: ModrinthProjectType): string[][] {
   return facets;
 }
 
-async function latestVersionFromHash(file: PlayerAddonFile, appVersion: string): Promise<VersionResponse[number]> {
+async function latestVersionFromHash(
+  file: PlayerAddonFile,
+  appVersion: string,
+  minecraft: ServerMinecraftConfig
+): Promise<VersionResponse[number]> {
   const response = await axios.post<VersionResponse[number]>(
     `${MODRINTH_API}/version_file/${file.sha512}/update`,
     {
-      loaders: updateLoaders(file.kind),
-      game_versions: [MC_VERSION]
+      loaders: updateLoaders(file.kind, minecraft.loader),
+      game_versions: [minecraft.version]
     },
     {
       params: {
@@ -300,8 +387,19 @@ async function latestVersionFromHash(file: PlayerAddonFile, appVersion: string):
   return response.data;
 }
 
-function updateLoaders(kind: PlayerAddonFile['kind']): string[] {
-  if (kind === 'mod') return ['neoforge'];
+async function versionFromHash(sha512: string, appVersion: string): Promise<VersionResponse[number]> {
+  const response = await axios.get<VersionResponse[number]>(`${MODRINTH_API}/version_file/${sha512}`, {
+    params: { algorithm: 'sha512' },
+    headers: modrinthHeaders(appVersion),
+    timeout: 12000,
+    validateStatus: (code) => code === 200
+  });
+
+  return response.data;
+}
+
+function updateLoaders(kind: PlayerAddonFile['kind'], loader: ServerMinecraftConfig['loader']): string[] {
+  if (kind === 'mod') return loader === 'vanilla' ? [] : [loader];
   if (kind === 'resourcepack') return ['minecraft'];
   return ['iris', 'oculus'];
 }
@@ -318,9 +416,13 @@ function unknownUpdate(file: PlayerAddonFile, message: string): ModrinthAddonUpd
   };
 }
 
-async function findInstallableVersion(request: ModrinthInstallRequest, appVersion: string): Promise<VersionResponse[number] | null> {
+async function findInstallableVersion(
+  request: ModrinthInstallRequest,
+  appVersion: string,
+  minecraft: ServerMinecraftConfig
+): Promise<VersionResponse[number] | null> {
   const response = await axios.get<VersionResponse>(`${MODRINTH_API}/project/${encodeURIComponent(request.projectId)}/version`, {
-    params: versionParams(request.projectType),
+    params: versionParams(request.projectType, minecraft),
     headers: modrinthHeaders(appVersion),
     timeout: 12000,
     validateStatus: (code) => code === 200
@@ -334,14 +436,14 @@ async function findInstallableVersion(request: ModrinthInstallRequest, appVersio
   );
 }
 
-function versionParams(projectType: ModrinthProjectType): Record<string, string | boolean> {
+function versionParams(projectType: ModrinthProjectType, minecraft: ServerMinecraftConfig): Record<string, string | boolean> {
   const params: Record<string, string | boolean> = {
-    game_versions: JSON.stringify([MC_VERSION]),
+    game_versions: JSON.stringify([minecraft.version]),
     include_changelog: false
   };
 
-  if (projectType === 'mod') {
-    params.loaders = JSON.stringify(['neoforge']);
+  if (projectType === 'mod' && minecraft.loader !== 'vanilla') {
+    params.loaders = JSON.stringify([minecraft.loader]);
   }
 
   if (projectType === 'resourcepack') {
@@ -349,6 +451,61 @@ function versionParams(projectType: ModrinthProjectType): Record<string, string 
   }
 
   return params;
+}
+
+export async function readSearchCache(paths: LauncherPaths): Promise<ModrinthSearchCache> {
+  try {
+    return JSON.parse(await fs.readFile(searchCacheFile(paths), 'utf8')) as ModrinthSearchCache;
+  } catch {
+    return null;
+  }
+}
+
+async function writeSearchCache(
+  paths: LauncherPaths,
+  request: ModrinthSearchRequest,
+  minecraft: ServerMinecraftConfig,
+  results: ModrinthProject[]
+): Promise<void> {
+  await fs.mkdir(paths.launcherDataDir, { recursive: true });
+  await fs.writeFile(
+    searchCacheFile(paths),
+    `${JSON.stringify(
+      {
+        query: request.query,
+        projectType: request.projectType,
+        sort: request.sort,
+        gameVersion: minecraft.version,
+        loader: minecraft.loader,
+        results,
+        updatedAt: new Date().toISOString()
+      },
+      null,
+      2
+    )}\n`,
+    'utf8'
+  );
+}
+
+async function readDetectionCache(paths: LauncherPaths): Promise<DetectionCache> {
+  try {
+    return JSON.parse(await fs.readFile(detectionCacheFile(paths), 'utf8')) as DetectionCache;
+  } catch {
+    return {};
+  }
+}
+
+async function writeDetectionCache(paths: LauncherPaths, cache: DetectionCache): Promise<void> {
+  await fs.mkdir(paths.launcherDataDir, { recursive: true });
+  await fs.writeFile(detectionCacheFile(paths), `${JSON.stringify(cache, null, 2)}\n`, 'utf8');
+}
+
+function searchCacheFile(paths: LauncherPaths): string {
+  return path.join(paths.launcherDataDir, 'modrinth-search-cache.json');
+}
+
+function detectionCacheFile(paths: LauncherPaths): string {
+  return path.join(paths.launcherDataDir, 'modrinth-detection-cache.json');
 }
 
 function normalizeProject(input: Record<string, unknown>): ModrinthProject | null {

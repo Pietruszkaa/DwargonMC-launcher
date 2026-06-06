@@ -14,6 +14,7 @@ const filesDir = path.join(rootDir, 'files');
 const backgroundsDir = path.join(rootDir, 'backgrounds');
 const manifestFile = path.join(rootDir, 'manifest.json');
 const announcementsFile = path.join(rootDir, 'announcements.json');
+const serverInfoFile = path.join(rootDir, 'server.json');
 const port = Number(process.env.PORT || 2121);
 const bindHost = process.env.BIND_HOST || '0.0.0.0';
 const publicUrl = process.env.PUBLIC_URL || `http://127.0.0.1:${port}`;
@@ -21,6 +22,11 @@ const mapTarget = process.env.MAP_TARGET || 'http://127.0.0.1:8888';
 const mapRequestHeaders = parseMapRequestHeaders(process.env);
 const mcHost = process.env.MC_HOST || '127.0.0.1';
 const mcPort = Number(process.env.MC_PORT || 25565);
+const minecraftAddress = process.env.MC_ADDRESS || buildMinecraftAddress(process.env.MC_PUBLIC_HOST, process.env.MC_PUBLIC_PORT);
+const minecraftVersion = process.env.MC_VERSION || '1.21.1';
+const minecraftLoader = ['vanilla', 'neoforge'].includes(process.env.MC_LOADER) ? process.env.MC_LOADER : 'neoforge';
+const minecraftLoaderVersion = process.env.MC_LOADER_VERSION || 'latest';
+const serverPassword = process.env.SERVER_PASSWORD || '';
 
 async function buildServer() {
   const app = fastify({
@@ -41,6 +47,10 @@ async function buildServer() {
 
   await fs.mkdir(filesDir, { recursive: true });
   await fs.mkdir(backgroundsDir, { recursive: true });
+
+  app.get('/server.json', async (_request, reply) => {
+    return reply.type('application/json').send(await readServerInfo());
+  });
 
   app.get('/health', async () => {
     const minecraftStatus = await pingMinecraftStatus(mcHost, mcPort, 1800);
@@ -97,6 +107,26 @@ async function buildServer() {
     return reply.send(result.value);
   });
 
+  app.put('/admin/server.json', async (request, reply) => {
+    if (!hasAdminAccess(request.headers, process.env.ADMIN_TOKEN)) {
+      return reply.code(401).send({
+        error: 'unauthorized',
+        message: 'Nieprawidlowy albo brakujacy token admina.'
+      });
+    }
+
+    const result = normalizeServerInfoPayload(request.body);
+    if (!result.ok) {
+      return reply.code(400).send({
+        error: 'invalid_server_info',
+        message: result.message
+      });
+    }
+
+    await writeJsonAtomic(serverInfoFile, result.value);
+    return reply.send(await readServerInfo());
+  });
+
   app.get('/files/*', async (request, reply) => {
     const relative = request.params['*'];
     const safePath = resolveInside(filesDir, relative);
@@ -135,7 +165,7 @@ async function buildServer() {
   app.get('/map/*', mapProxyHandler);
 
   app.get('/', async () => ({
-    name: 'DwargonMC backend',
+    name: (await readServerInfo()).name,
     publicUrl,
     readOnly: true
   }));
@@ -167,6 +197,48 @@ async function buildServer() {
       });
     }
   }
+}
+
+async function readServerInfo() {
+  const fallback = {
+    name: process.env.SERVER_NAME || 'Minecraft Server',
+    publicUrl,
+    minecraft: {
+      address: minecraftAddress,
+      version: minecraftVersion,
+      loader: minecraftLoader,
+      loaderVersion: minecraftLoaderVersion
+    },
+    auth: {
+      required: Boolean(serverPassword),
+      type: serverPassword ? 'password' : null
+    }
+  };
+
+  try {
+    const raw = await fs.readFile(serverInfoFile, 'utf8');
+    const parsed = JSON.parse(raw);
+    return {
+      ...fallback,
+      ...parsed,
+      minecraft: {
+        ...fallback.minecraft,
+        ...(parsed.minecraft && typeof parsed.minecraft === 'object' ? parsed.minecraft : {})
+      },
+      auth: {
+        ...fallback.auth,
+        ...(parsed.auth && typeof parsed.auth === 'object' ? parsed.auth : {})
+      }
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function buildMinecraftAddress(host, portValue) {
+  if (!host) return null;
+  const port = Number(portValue || 25565);
+  return Number.isFinite(port) && port > 0 && port !== 25565 ? `${host}:${port}` : host;
 }
 
 function resolveInside(root, relative) {
@@ -352,7 +424,7 @@ function parseMapRequestHeaders(env) {
 }
 
 function hasAdminAccess(headers, adminToken) {
-  if (!adminToken) return false;
+  if (!adminToken || !adminToken.trim()) return true;
 
   const provided = parseAdminToken(headers);
   if (!provided) return false;
@@ -360,6 +432,41 @@ function hasAdminAccess(headers, adminToken) {
   const expectedBuffer = Buffer.from(adminToken);
   const providedBuffer = Buffer.from(provided);
   return expectedBuffer.length === providedBuffer.length && require('node:crypto').timingSafeEqual(expectedBuffer, providedBuffer);
+}
+
+function normalizeServerInfoPayload(input) {
+  if (!input || typeof input !== 'object') {
+    return { ok: false, message: 'Body musi byc obiektem server.json.' };
+  }
+
+  const name = stringField(input.name, 80);
+  if (!name) return { ok: false, message: 'Nazwa serwera jest wymagana.' };
+
+  const minecraft = input.minecraft && typeof input.minecraft === 'object' ? input.minecraft : {};
+  const version = stringField(minecraft.version, 32) || '1.21.1';
+  const loader = ['vanilla', 'neoforge'].includes(minecraft.loader) ? minecraft.loader : 'neoforge';
+  const loaderVersion = stringField(minecraft.loaderVersion, 80) || 'latest';
+  const address = stringField(minecraft.address, 180) || null;
+
+  const auth = input.auth && typeof input.auth === 'object' ? input.auth : {};
+  const authRequired = auth.required === true;
+
+  return {
+    ok: true,
+    value: {
+      name,
+      minecraft: {
+        address,
+        version,
+        loader,
+        loaderVersion
+      },
+      auth: {
+        required: authRequired,
+        type: authRequired ? 'password' : null
+      }
+    }
+  };
 }
 
 function parseAdminToken(headers) {

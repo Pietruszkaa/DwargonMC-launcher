@@ -28,7 +28,6 @@ The current repository ships the DwargonMC configuration, but the long-term dire
 launcher/       Electron + React/Vite desktop app
 sync-server/    Fastify sync backend, health endpoint, map proxy, announcements
 admin-site/     Static admin UI for announcements and backend inspection
-download-site/  Static download/status page; kept lightweight
 docs/           Planning and release documentation
 ```
 
@@ -165,7 +164,6 @@ Default services:
 
 ```text
 2121 - sync-server
-8081 - download-site
 8082 - admin-site
 ```
 

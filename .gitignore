@@ -7,7 +7,6 @@ sync-server/node_modules/
 launcher/dist/
 launcher/dist-electron/
 launcher/release/
-download-site/dist/
 admin-site/dist/
 dist/
 dist-electron/
@@ -16,11 +15,13 @@ release/
 # Local launcher runtime data
 launcher/launcher-data/
 launcher/minecraft/
+launcher/instances/
 launcher-data/
 minecraft/
 
 # Backend runtime/sync content managed outside git
 sync-server/manifest.json
+sync-server/server.json
 sync-server/files/*
 sync-server/backgrounds/*
 

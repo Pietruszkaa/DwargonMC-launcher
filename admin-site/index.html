@@ -136,6 +136,23 @@
         gap: 10px;
       }
 
+      .two {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .editor-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 150px 150px;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .small-editor {
+        min-height: 160px;
+      }
+
       .cards {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -230,7 +247,7 @@
       <header>
         <div>
           <h1>DwargonMC Admin</h1>
-          <p>Edycja publicznych komunikatow launchera zapisanych w `announcements.json`.</p>
+          <p>Edycja komunikatow launchera oraz publicznego server.json.</p>
         </div>
         <p id="status" class="status">Gotowy.</p>
       </header>
@@ -249,6 +266,7 @@
             <button id="loadButton" type="button">Pobierz</button>
             <button id="saveButton" class="primary" type="button">Zapisz</button>
             <button id="formatButton" class="warn" type="button">Formatuj</button>
+            <button id="saveServerButton" class="primary" type="button">Zapisz server.json</button>
             <button id="overviewButton" type="button">Odśwież status</button>
             <button id="mapButton" type="button">Mapa</button>
           </div>
@@ -288,10 +306,73 @@
         </aside>
 
         <section class="panel stack">
-          <label>
-            announcements.json
-            <textarea id="editor" spellcheck="false"></textarea>
-          </label>
+          <div class="panel stack">
+            <h2>server.json</h2>
+            <div class="two">
+              <label>
+                Nazwa serwera
+                <input id="serverName" placeholder="DwargonMC" />
+              </label>
+              <label>
+                Adres MC
+                <input id="mcAddress" placeholder="dwargonmc.playit.plus" />
+              </label>
+              <label>
+                Wersja MC
+                <input id="mcVersion" placeholder="1.21.1" />
+              </label>
+              <label>
+                Loader
+                <select id="mcLoader">
+                  <option value="neoforge">NeoForge</option>
+                  <option value="vanilla">Vanilla</option>
+                </select>
+              </label>
+              <label>
+                Wersja loadera
+                <input id="mcLoaderVersion" placeholder="latest albo 21.1.230" />
+              </label>
+              <label>
+                Hasło wymagane
+                <select id="authRequired">
+                  <option value="false">Nie</option>
+                  <option value="true">Tak</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="panel stack">
+            <h2>Komunikaty</h2>
+            <div class="editor-row">
+              <label>
+                Tytuł
+                <input id="messageTitle" placeholder="DwargonMC" />
+              </label>
+              <label>
+                Typ
+                <select id="messageLevel">
+                  <option value="info">Info</option>
+                  <option value="warning">Ostrzeżenie</option>
+                  <option value="maintenance">Przerwa</option>
+                  <option value="update">Update</option>
+                </select>
+              </label>
+              <button id="addMessageButton" type="button">Dodaj</button>
+            </div>
+            <label>
+              Treść
+              <textarea id="messageBody" class="small-editor" spellcheck="true"></textarea>
+            </label>
+            <label>
+              Link opcjonalny
+              <input id="messageLink" placeholder="https://..." />
+            </label>
+            <label>
+              announcements.json
+              <textarea id="editor" spellcheck="false"></textarea>
+            </label>
+          </div>
         </section>
       </section>
     </main>
@@ -300,6 +381,16 @@
       const backendUrlInput = document.querySelector('#backendUrl');
       const adminTokenInput = document.querySelector('#adminToken');
       const editor = document.querySelector('#editor');
+      const serverNameInput = document.querySelector('#serverName');
+      const mcAddressInput = document.querySelector('#mcAddress');
+      const mcVersionInput = document.querySelector('#mcVersion');
+      const mcLoaderInput = document.querySelector('#mcLoader');
+      const mcLoaderVersionInput = document.querySelector('#mcLoaderVersion');
+      const authRequiredInput = document.querySelector('#authRequired');
+      const messageTitleInput = document.querySelector('#messageTitle');
+      const messageLevelInput = document.querySelector('#messageLevel');
+      const messageBodyInput = document.querySelector('#messageBody');
+      const messageLinkInput = document.querySelector('#messageLink');
       const preview = document.querySelector('#preview');
       const status = document.querySelector('#status');
       const metrics = {
@@ -330,9 +421,11 @@
         2
       );
 
-      document.querySelector('#loadButton').addEventListener('click', loadAnnouncements);
+      document.querySelector('#loadButton').addEventListener('click', loadAll);
       document.querySelector('#saveButton').addEventListener('click', saveAnnouncements);
+      document.querySelector('#saveServerButton').addEventListener('click', saveServerInfo);
       document.querySelector('#formatButton').addEventListener('click', formatJson);
+      document.querySelector('#addMessageButton').addEventListener('click', addMessage);
       document.querySelector('#overviewButton').addEventListener('click', refreshOverview);
       document.querySelector('#mapButton').addEventListener('click', () => {
         window.open(`${backendBase()}/map/`, '_blank', 'noopener');
@@ -341,6 +434,10 @@
 
       renderPreview();
       refreshOverview();
+
+      async function loadAll() {
+        await Promise.all([loadAnnouncements(), loadServerInfo()]);
+      }
 
       async function loadAnnouncements() {
         saveLocalConfig();
@@ -359,6 +456,21 @@
           setStatus('Pobrano komunikaty.', 'good');
         } catch (error) {
           setStatus(`Blad pobierania: ${error.message}`, 'bad');
+        }
+      }
+
+      async function loadServerInfo() {
+        try {
+          const server = await fetchJson('/server.json');
+          serverNameInput.value = server.name || '';
+          mcAddressInput.value = server.minecraft?.address || '';
+          mcVersionInput.value = server.minecraft?.version || '1.21.1';
+          mcLoaderInput.value = server.minecraft?.loader || 'neoforge';
+          mcLoaderVersionInput.value = server.minecraft?.loaderVersion || 'latest';
+          authRequiredInput.value = server.auth?.required ? 'true' : 'false';
+          setStatus('Pobrano server.json.', 'good');
+        } catch (error) {
+          setStatus(`Blad server.json: ${error.message}`, 'bad');
         }
       }
 
@@ -439,11 +551,10 @@
         try {
           const response = await fetch(`${backendBase()}/admin/announcements.json`, {
             method: 'PUT',
-            headers: {
+            headers: adminHeaders({
               Accept: 'application/json',
-              Authorization: `Bearer ${adminTokenInput.value.trim()}`,
               'Content-Type': 'application/json'
-            },
+            }),
             body: JSON.stringify(payload)
           });
           const result = await response.json().catch(() => ({}));
@@ -454,6 +565,74 @@
         } catch (error) {
           setStatus(`Blad zapisu: ${error.message}`, 'bad');
         }
+      }
+
+      async function saveServerInfo() {
+        saveLocalConfig();
+        const payload = {
+          name: serverNameInput.value.trim(),
+          minecraft: {
+            address: mcAddressInput.value.trim() || null,
+            version: mcVersionInput.value.trim() || '1.21.1',
+            loader: mcLoaderInput.value,
+            loaderVersion: mcLoaderVersionInput.value.trim() || 'latest'
+          },
+          auth: {
+            required: authRequiredInput.value === 'true',
+            type: authRequiredInput.value === 'true' ? 'password' : null
+          }
+        };
+
+        try {
+          const response = await fetch(`${backendBase()}/admin/server.json`, {
+            method: 'PUT',
+            headers: adminHeaders({
+              Accept: 'application/json',
+              'Content-Type': 'application/json'
+            }),
+            body: JSON.stringify(payload)
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
+          setStatus('Zapisano server.json.', 'good');
+          await loadServerInfo();
+        } catch (error) {
+          setStatus(`Blad zapisu server.json: ${error.message}`, 'bad');
+        }
+      }
+
+      function addMessage() {
+        let payload;
+        try {
+          payload = JSON.parse(editor.value);
+        } catch (error) {
+          setStatus(`Niepoprawny JSON: ${error.message}`, 'bad');
+          return;
+        }
+
+        if (!Array.isArray(payload.items)) payload.items = [];
+        const title = messageTitleInput.value.trim();
+        const body = messageBodyInput.value.trim();
+        if (!title || !body) {
+          setStatus('Tytul i tresc komunikatu sa wymagane.', 'bad');
+          return;
+        }
+
+        payload.items.unshift({
+          id: stableId(title, body),
+          title,
+          body,
+          level: messageLevelInput.value,
+          date: new Date().toISOString(),
+          link: messageLinkInput.value.trim() || null,
+          expiresAt: null
+        });
+        editor.value = JSON.stringify(payload, null, 2);
+        messageTitleInput.value = '';
+        messageBodyInput.value = '';
+        messageLinkInput.value = '';
+        renderPreview();
+        setStatus('Dodano komunikat lokalnie. Uzyj Zapisz.', 'good');
       }
 
       function formatJson() {
@@ -495,6 +674,15 @@
 
       function backendBase() {
         return backendUrlInput.value.trim().replace(/\/+$/, '');
+      }
+
+      function adminHeaders(base) {
+        const token = adminTokenInput.value.trim();
+        return token ? { ...base, Authorization: `Bearer ${token}` } : base;
+      }
+
+      function stableId(title, body) {
+        return `${title}:${body}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 80);
       }
 
       function saveLocalConfig() {

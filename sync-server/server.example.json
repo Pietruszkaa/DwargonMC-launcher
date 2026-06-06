@@ -1,0 +1,13 @@
+{
+  "name": "DwargonMC",
+  "minecraft": {
+    "address": "dwargonmc.playit.plus",
+    "version": "1.21.1",
+    "loader": "neoforge",
+    "loaderVersion": "latest"
+  },
+  "auth": {
+    "required": false,
+    "type": null
+  }
+}

@@ -51,6 +51,27 @@ export type LauncherProfile = {
   setupComplete: boolean;
 };
 
+export type ServerEntry = {
+  id: string;
+  instanceId: string;
+  name: string;
+  backendUrl: string;
+  minecraft: {
+    address: string | null;
+    version: string;
+    loader: 'vanilla' | 'neoforge';
+    loaderVersion: string | null;
+  };
+  authRequired: boolean;
+  addedAt: string;
+  lastUsedAt: string;
+};
+
+export type ServerRegistry = {
+  activeServerId: string | null;
+  servers: ServerEntry[];
+};
+
 export type MicrosoftProfile = {
   name: string;
   uuid: string;
@@ -87,12 +108,39 @@ export type AnnouncementsStatus = {
 };
 
 export type SyncStatus = {
-  phase: 'idle' | 'checking' | 'downloading' | 'complete' | 'warning' | 'error';
+  phase: 'idle' | 'checking' | 'ready' | 'downloading' | 'complete' | 'warning' | 'error';
   verified: boolean;
   message: string;
   currentFile?: string;
   completedFiles: number;
   totalFiles: number;
+  plan?: SyncPlan;
+};
+
+export type SyncPlanImpact = 'required' | 'recommended' | 'optional';
+
+export type SyncPlanChange = {
+  path: string;
+  kind: 'file' | 'background' | 'orphan' | 'background-orphan';
+  action: 'download' | 'update' | 'remove';
+  impact: SyncPlanImpact;
+};
+
+export type SyncPlan = {
+  version: string;
+  generatedAt: string;
+  changes: SyncPlanChange[];
+  hasChanges: boolean;
+  highestImpact: SyncPlanImpact | null;
+  requiredCount: number;
+  recommendedCount: number;
+  optionalCount: number;
+};
+
+export type MinecraftInstanceCheck = {
+  ready: boolean;
+  missing: string[];
+  message: string;
 };
 
 export type LaunchStatus = {
@@ -106,6 +154,7 @@ export type LauncherState = {
   setup: SetupState;
   settings: LauncherSettings;
   profile: LauncherProfile;
+  servers: ServerRegistry;
   health: ServerHealth;
   sync: SyncStatus;
   launch: LaunchStatus;
@@ -124,6 +173,7 @@ export type LauncherState = {
     maxRamMb: number;
     defaultRamMb: number;
     java: JavaCheckResult;
+    javaInstaller: JavaInstallerResult;
   };
 };
 
@@ -135,9 +185,23 @@ export type UpdateStatus = {
   releaseName: string | null;
   releaseUrl: string | null;
   downloadUrl: string | null;
+  downloadName: string | null;
   sha256Url: string | null;
   notes: string;
   error: string | null;
+  download: UpdateDownloadStatus;
+};
+
+export type UpdateDownloadStatus = {
+  phase: 'idle' | 'downloading' | 'verifying' | 'ready' | 'error';
+  progress: number;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  filePath: string | null;
+  fileName: string | null;
+  expectedSha256: string | null;
+  actualSha256: string | null;
+  message: string;
 };
 
 export type SetupState = {
@@ -173,8 +237,13 @@ export type ReinstallCoreResult = {
 };
 
 export type JavaInstallerResult = {
-  started: boolean;
+  phase: 'idle' | 'downloading' | 'ready' | 'error';
+  progress: number;
+  downloadedBytes: number;
+  totalBytes: number | null;
   path: string | null;
+  url: string;
+  pageUrl: string;
   message: string;
 };
 
@@ -201,6 +270,16 @@ export type ModrinthProject = {
   downloads: number;
   iconUrl: string | null;
 };
+
+export type ModrinthSearchCache = {
+  query: string;
+  projectType: ModrinthProjectType;
+  sort: ModrinthSort;
+  gameVersion: string;
+  loader: string;
+  results: ModrinthProject[];
+  updatedAt: string;
+} | null;
 
 export type ModrinthInstallRequest = {
   projectId: string;
@@ -248,13 +327,17 @@ export type MinecraftOptionsState = {
 
 export type LauncherApi = {
   getState(): Promise<LauncherState>;
+  addServer(backendUrl: string): Promise<LauncherState>;
+  switchServer(serverId: string): Promise<LauncherState>;
   saveSettings(settings: LauncherSettings): Promise<LauncherSettings>;
   saveProfile(profile: LauncherProfile): Promise<LauncherProfile>;
   completeSetup(): Promise<LauncherProfile>;
   loginMicrosoft(): Promise<LauncherProfile>;
   logoutMicrosoft(): Promise<LauncherProfile>;
   runSync(): Promise<SyncStatus>;
+  applySync(): Promise<SyncStatus>;
   refreshAnnouncements(): Promise<AnnouncementsStatus>;
+  getModrinthCache(): Promise<ModrinthSearchCache>;
   searchModrinth(request: ModrinthSearchRequest): Promise<ModrinthProject[]>;
   installModrinth(request: ModrinthInstallRequest): Promise<ModrinthInstallResult>;
   listInstalledModrinth(): Promise<InstalledModrinthProject[]>;
@@ -262,8 +345,11 @@ export type LauncherApi = {
   checkAddonUpdates(): Promise<ModrinthAddonUpdate[]>;
   checkUpdate(): Promise<UpdateStatus>;
   openUpdateDownload(): Promise<void>;
+  downloadUpdate(): Promise<UpdateDownloadStatus>;
+  showDownloadedUpdate(): Promise<void>;
   refreshJava(): Promise<JavaCheckResult>;
   downloadJavaInstaller(): Promise<JavaInstallerResult>;
+  openJavaInstaller(): Promise<void>;
   openJavaDownloadPage(): Promise<void>;
   reinstallCore(): Promise<ReinstallCoreResult>;
   launchGame(request: LaunchRequest): Promise<LaunchStatus>;
@@ -278,4 +364,5 @@ export type LauncherApi = {
   onState(callback: (state: LauncherState) => void): () => void;
   onLog(callback: (line: string) => void): () => void;
   onCrash(callback: (crash: CrashInfo) => void): () => void;
+  onInstanceRequired(callback: (check: MinecraftInstanceCheck) => void): () => void;
 };

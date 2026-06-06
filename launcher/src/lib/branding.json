@@ -1,0 +1,16 @@
+{
+  "id": "dwargonmc",
+  "serverName": "Wybierz serwer",
+  "launcherName": "Dwargon Launcher",
+  "backendUrl": "",
+  "serverAddress": "",
+  "mapPath": "/map/",
+  "colors": {
+    "primary": "#4caf50",
+    "primaryHover": "#45a049"
+  },
+  "links": {
+    "releases": null,
+    "discord": null
+  }
+}

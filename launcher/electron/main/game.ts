@@ -2,9 +2,10 @@ import axios from 'axios';
 import fs from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
-import { MIN_NEOFORGE_VERSION, SERVER_HOST, SERVER_PORT, MC_VERSION } from './constants';
+import { MIN_NEOFORGE_VERSION, MC_VERSION } from './constants';
 import type { MclcAuthorization } from './microsoftAuth';
 import type { LauncherPaths } from './paths';
+import type { ServerMinecraftConfig } from './servers';
 import type { LauncherSettings } from './storage';
 import { validateNickname } from './validation';
 
@@ -25,12 +26,19 @@ export type GameEvents = {
   onCrash(exitCode: number): void;
 };
 
+export type MinecraftInstanceCheck = {
+  ready: boolean;
+  missing: string[];
+  message: string;
+};
+
 export async function launchGame(
   paths: LauncherPaths,
   settings: LauncherSettings,
   nickname: string,
   authorization: MclcAuthorization,
-  events: GameEvents
+  events: GameEvents,
+  minecraftConfig?: ServerMinecraftConfig | null
 ): Promise<LaunchStatus> {
   const validationError = validateNickname(nickname);
 
@@ -42,9 +50,17 @@ export async function launchGame(
     };
   }
 
-  events.onStatus({ running: false, phase: 'preparing', message: 'Sprawdzanie NeoForge...' });
-  const neoforge = await ensureNeoForgeInstaller(paths.launcherDataDir, events);
-  await purgeStaleForgeMetadata(paths.minecraftDir, neoforge.version, events);
+  const minecraft = minecraftConfig ?? {
+    address: null,
+    version: MC_VERSION,
+    loader: 'neoforge' as const,
+    loaderVersion: null
+  };
+  const neoforge =
+    minecraft.loader === 'neoforge'
+      ? await ensureNeoForgeInstaller(paths.launcherDataDir, events, minecraft)
+      : null;
+  if (neoforge) await purgeStaleForgeMetadata(paths.minecraftDir, minecraft.version, neoforge.version, events);
 
   const launcher = new Client();
   const javaPath = settings.javaPath.trim() || undefined;
@@ -77,10 +93,10 @@ export async function launchGame(
     authorization,
     root: paths.minecraftDir,
     version: {
-      number: MC_VERSION,
+      number: minecraft.version,
       type: 'release'
     },
-    forge: neoforge.file,
+    forge: neoforge?.file,
     memory: {
       max: `${settings.ramMb}M`,
       min: '1024M'
@@ -88,10 +104,10 @@ export async function launchGame(
     overrides: {
       detached: false
     },
-    quickPlay: settings.autoConnect
+    quickPlay: settings.autoConnect && minecraft.address
       ? {
           type: 'multiplayer',
-          identifier: `${SERVER_HOST}:${SERVER_PORT}`
+          identifier: minecraft.address
         }
       : undefined,
     javaPath
@@ -112,8 +128,44 @@ export async function launchGame(
   };
 }
 
-async function ensureNeoForgeInstaller(launcherDataDir: string, events: GameEvents): Promise<{ version: string; file: string }> {
-  const version = await resolveLatestNeoForgeVersion();
+export async function checkMinecraftInstanceReady(
+  paths: LauncherPaths,
+  minecraft: ServerMinecraftConfig
+): Promise<MinecraftInstanceCheck> {
+  const missing: string[] = [];
+  const versionDir = path.join(paths.minecraftDir, 'versions', minecraft.version);
+
+  if (!(await fileExists(path.join(versionDir, `${minecraft.version}.json`)))) missing.push(`versions/${minecraft.version}/${minecraft.version}.json`);
+  if (!(await fileExists(path.join(versionDir, `${minecraft.version}.jar`)))) missing.push(`versions/${minecraft.version}/${minecraft.version}.jar`);
+  if (!(await directoryHasFiles(path.join(paths.minecraftDir, 'libraries')))) missing.push('libraries/');
+  if (!(await fileExists(path.join(paths.minecraftDir, 'assets', 'indexes', `${minecraft.version}.json`)))) {
+    missing.push(`assets/indexes/${minecraft.version}.json`);
+  }
+  if (!(await directoryHasFiles(path.join(paths.minecraftDir, 'assets', 'objects')))) missing.push('assets/objects/');
+
+  const exactNeoForgeVersion = minecraft.loaderVersion && minecraft.loaderVersion !== 'latest' ? minecraft.loaderVersion : null;
+  if (minecraft.loader === 'neoforge' && !(await hasNeoForgeInstaller(paths.launcherDataDir, exactNeoForgeVersion))) {
+    missing.push(exactNeoForgeVersion ? `launcher-data/neoforge-${exactNeoForgeVersion}-installer.jar` : 'launcher-data/neoforge-*-installer.jar');
+  }
+
+  return {
+    ready: missing.length === 0,
+    missing,
+    message: missing.length
+      ? 'Ta instancja Minecraft nie jest jeszcze przygotowana. Launcher nie pobiera core automatycznie przy kliknięciu Graj.'
+      : 'Instancja Minecraft wygląda na przygotowaną.'
+  };
+}
+
+async function ensureNeoForgeInstaller(
+  launcherDataDir: string,
+  events: GameEvents,
+  minecraft: ServerMinecraftConfig
+): Promise<{ version: string; file: string }> {
+  events.onStatus({ running: false, phase: 'preparing', message: 'Sprawdzanie NeoForge...' });
+  const version = minecraft.loaderVersion && minecraft.loaderVersion !== 'latest'
+    ? minecraft.loaderVersion
+    : await resolveLatestNeoForgeVersion(minecraft.version);
   const destination = path.join(launcherDataDir, `neoforge-${version}-installer.jar`);
 
   try {
@@ -140,7 +192,22 @@ async function ensureNeoForgeInstaller(launcherDataDir: string, events: GameEven
   return { version, file: destination };
 }
 
-async function resolveLatestNeoForgeVersion(): Promise<string> {
+async function hasNeoForgeInstaller(launcherDataDir: string, loaderVersion: string | null): Promise<boolean> {
+  if (loaderVersion) return fileExists(path.join(launcherDataDir, `neoforge-${loaderVersion}-installer.jar`));
+
+  try {
+    const entries = await fs.readdir(launcherDataDir);
+    return entries.some((entry) => /^neoforge-\d+\.\d+\.\d+-installer\.jar$/.test(entry));
+  } catch {
+    return false;
+  }
+}
+
+async function resolveLatestNeoForgeVersion(minecraftVersion: string): Promise<string> {
+  if (minecraftVersion !== MC_VERSION) {
+    throw new Error(`Backend musi podać minecraft.loaderVersion dla NeoForge ${minecraftVersion}.`);
+  }
+
   try {
     const response = await axios.get<string>('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml', {
       responseType: 'text',
@@ -235,8 +302,31 @@ export function splitLaunchArgs(value: string): string[] {
   return args;
 }
 
-export async function purgeStaleForgeMetadata(minecraftDir: string, desiredNeoForgeVersion: string, events?: GameEvents): Promise<boolean> {
-  const forgeVersionDir = path.join(minecraftDir, 'forge', MC_VERSION);
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
+async function directoryHasFiles(dir: string): Promise<boolean> {
+  try {
+    const entries = await fs.readdir(dir);
+    return entries.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function purgeStaleForgeMetadata(
+  minecraftDir: string,
+  minecraftVersion: string,
+  desiredNeoForgeVersion: string,
+  events?: GameEvents
+): Promise<boolean> {
+  const forgeVersionDir = path.join(minecraftDir, 'forge', minecraftVersion);
   const versionJson = path.join(forgeVersionDir, 'version.json');
 
   let raw: string;
@@ -251,7 +341,7 @@ export async function purgeStaleForgeMetadata(minecraftDir: string, desiredNeoFo
   }
 
   await fs.rm(forgeVersionDir, { recursive: true, force: true });
-  events?.onLog(`Usunięto stare metadata NeoForge dla ${MC_VERSION}; wymagane ${desiredNeoForgeVersion}.`);
+  events?.onLog(`Usunięto stare metadata NeoForge dla ${minecraftVersion}; wymagane ${desiredNeoForgeVersion}.`);
   return true;
 }
 

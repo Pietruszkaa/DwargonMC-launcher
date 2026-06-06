@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import fsSync from 'node:fs';
 import { constants as fsConstants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -6,6 +7,12 @@ import path from 'node:path';
 export type LauncherPaths = {
   installDir: string;
   appDir: string;
+  globalDataDir: string;
+  serversFile: string;
+  instancesDir: string;
+  activeInstanceId: string;
+  activeInstanceDir: string;
+  usingLegacyInstanceDir: boolean;
   minecraftDir: string;
   launcherDataDir: string;
   assetsDir: string;
@@ -16,6 +23,7 @@ export type LauncherPaths = {
 };
 
 const BACKGROUND_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+const DEFAULT_INSTANCE_ID = 'dwargonmc';
 
 export function getInstallDir(): string {
   return resolveInstallDir({
@@ -53,14 +61,25 @@ export function getLauncherPaths(): LauncherPaths {
   return buildLauncherPaths(installDir, appDir);
 }
 
-export function buildLauncherPaths(installDir: string, appDir: string): LauncherPaths {
-  const minecraftDir = path.join(installDir, 'minecraft');
-  const launcherDataDir = path.join(installDir, 'launcher-data');
-  const assetsDir = path.join(installDir, 'assets');
+export function buildLauncherPaths(installDir: string, appDir: string, requestedInstanceId = process.env.DWARGONMC_INSTANCE_ID || DEFAULT_INSTANCE_ID): LauncherPaths {
+  const globalDataDir = path.join(installDir, 'launcher-data');
+  const activeInstanceId = normalizeInstanceId(requestedInstanceId);
+  const instancesDir = path.join(installDir, 'instances');
+  const usingLegacyInstanceDir = requestedInstanceId === DEFAULT_INSTANCE_ID && hasLegacyInstanceData(installDir);
+  const activeInstanceDir = usingLegacyInstanceDir ? installDir : path.join(instancesDir, activeInstanceId);
+  const minecraftDir = path.join(activeInstanceDir, 'minecraft');
+  const launcherDataDir = path.join(activeInstanceDir, 'launcher-data');
+  const assetsDir = path.join(activeInstanceDir, 'assets');
 
   return {
     installDir,
     appDir,
+    globalDataDir,
+    serversFile: path.join(globalDataDir, 'servers.json'),
+    instancesDir,
+    activeInstanceId,
+    activeInstanceDir,
+    usingLegacyInstanceDir,
     minecraftDir,
     launcherDataDir,
     assetsDir,
@@ -72,11 +91,23 @@ export function buildLauncherPaths(installDir: string, appDir: string): Launcher
 }
 
 export async function ensureLauncherDirs(paths: LauncherPaths): Promise<void> {
+  await fs.mkdir(paths.globalDataDir, { recursive: true });
+  await fs.mkdir(paths.instancesDir, { recursive: true });
+  await fs.mkdir(paths.activeInstanceDir, { recursive: true });
   await fs.mkdir(paths.minecraftDir, { recursive: true });
   await fs.mkdir(path.join(paths.minecraftDir, 'mods'), { recursive: true });
   await fs.mkdir(paths.launcherDataDir, { recursive: true });
   await fs.mkdir(path.join(paths.assetsDir, 'backgrounds'), { recursive: true });
   await copyBundledBackgrounds(paths);
+}
+
+function hasLegacyInstanceData(installDir: string): boolean {
+  return ['minecraft', 'launcher-data', 'assets'].some((entry) => fsSync.existsSync(path.join(installDir, entry)));
+}
+
+function normalizeInstanceId(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return normalized || DEFAULT_INSTANCE_ID;
 }
 
 export function resolveAppDir({

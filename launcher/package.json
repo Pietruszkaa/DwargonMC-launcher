@@ -1,8 +1,8 @@
 {
-  "name": "dwargonmc-launcher",
+  "name": "dwargon-launcher",
   "version": "1.1.2",
   "private": true,
-  "description": "Portable Minecraft 1.21.1 NeoForge launcher for DwargonMC.",
+  "description": "Portable multi-instance Minecraft launcher.",
   "main": "dist-electron/main/main.js",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
@@ -34,8 +34,8 @@
     "vitest": "^4.1.8"
   },
   "build": {
-    "appId": "pl.dwargonmc.launcher",
-    "productName": "DwargonMC Launcher",
+    "appId": "pl.dwargon.launcher",
+    "productName": "Dwargon Launcher",
     "directories": {
       "output": "release"
     },

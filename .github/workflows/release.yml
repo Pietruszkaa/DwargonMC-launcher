@@ -89,7 +89,7 @@ jobs:
 
           gh release view $tag 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --title "DwargonMC Launcher $tag" --notes-file "launcher/release/RELEASE_NOTES.md"
+            gh release create $tag --title "Dwargon Launcher $tag" --notes-file "launcher/release/RELEASE_NOTES.md"
           } else {
             gh release edit $tag --notes-file "launcher/release/RELEASE_NOTES.md"
           }

@@ -99,6 +99,23 @@ button:disabled {
   align-items: center;
 }
 
+.top-icon-btn {
+  -webkit-app-region: no-drag;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.top-icon-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 .status-left {
   min-width: 0;
   gap: 8px;
@@ -163,6 +180,28 @@ button:disabled {
   color: var(--primary);
   padding: 0 12px;
   font-weight: 700;
+}
+
+.server-switcher {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.server-switcher span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.server-switcher select {
+  max-width: 190px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.42);
+  color: var(--text);
+  padding: 0 8px;
 }
 
 .server-state-online,
@@ -1087,6 +1126,44 @@ button:disabled {
   padding: 0 12px;
 }
 
+.server-list {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  max-height: 210px;
+  overflow: auto;
+}
+
+.server-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  gap: 4px;
+  min-height: 0;
+  padding: 10px;
+  text-align: left;
+}
+
+.server-list button.active {
+  border-color: var(--primary);
+  background: rgba(76, 175, 80, 0.13);
+}
+
+.server-list button small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.server-setup {
+  display: grid;
+  gap: 12px;
+}
+
+.server-setup p {
+  margin: 0;
+  color: var(--muted);
+}
+
 .row-field {
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
@@ -1132,6 +1209,24 @@ button:disabled {
 .java-help-actions button:hover {
   border-color: var(--primary);
   background: rgba(0, 0, 0, 0.34);
+}
+
+.java-download-info {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 12px;
+}
+
+.java-download-info code {
+  overflow-wrap: anywhere;
+  color: var(--primary);
+  font-size: 12px;
+}
+
+.java-download-info small {
+  color: var(--muted);
 }
 
 .play-button {
@@ -1242,6 +1337,43 @@ button:disabled {
   display: grid;
   gap: 12px;
   padding: 20px;
+}
+
+.sync-plan {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  overflow: auto;
+}
+
+.sync-plan-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sync-plan-summary span,
+.sync-plan-list span {
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 9px 10px;
+}
+
+.sync-plan-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.sync-plan-list span {
+  display: grid;
+  gap: 3px;
+}
+
+.sync-plan-list small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .modrinth-panel {
@@ -1517,6 +1649,24 @@ button:disabled {
 
 .update-panel small {
   color: var(--muted);
+}
+
+.update-download-box {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 12px;
+}
+
+.update-download-box p {
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.update-download-box code {
+  color: var(--primary);
+  font-size: 12px;
 }
 
 .crash-actions {
