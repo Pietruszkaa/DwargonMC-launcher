@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { DEFAULT_BACKEND_URL } from './constants';
 import type { LauncherPaths } from './paths';
 import { clampRam, getRamInfo } from './ram';
+import { deleteMicrosoftToken, getMicrosoftToken, saveMicrosoftToken } from './keychain';
 
 export type Language = 'pl' | 'en';
 
@@ -114,10 +115,19 @@ export async function readProfile(paths: LauncherPaths): Promise<LauncherProfile
 
     const microsoft = normalizeMicrosoftProfile(profile.microsoft);
 
+    // Retrieve refresh token from secure storage
+    let microsoftWithToken = microsoft;
+    if (microsoft && profile.accountMode === 'microsoft') {
+      const refreshToken = await getMicrosoftToken(paths.launcherDataDir);
+      if (refreshToken) {
+        microsoftWithToken = { ...microsoft, refreshToken };
+      }
+    }
+
     return {
       nickname: profile.nickname ?? '',
       accountMode: profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline',
-      microsoft: profile.accountMode === 'microsoft' ? microsoft : null,
+      microsoft: profile.accountMode === 'microsoft' ? microsoftWithToken : null,
       lastPlayedAt: profile.lastPlayedAt ?? null,
       lastSessionSeconds: Math.max(0, Number(profile.lastSessionSeconds) || 0),
       totalPlaySeconds: Math.max(0, Number(profile.totalPlaySeconds) || 0),
@@ -133,10 +143,27 @@ export async function saveProfile(paths: LauncherPaths, profile: LauncherProfile
   const microsoft = normalizeMicrosoftProfile(profile.microsoft);
   const accountMode = profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline';
 
+  // Save refresh token to secure storage
+  if (accountMode === 'microsoft' && microsoft?.refreshToken) {
+    await saveMicrosoftToken(paths.launcherDataDir, microsoft.refreshToken);
+  } else {
+    // Delete old token if switching away from Microsoft account
+    await deleteMicrosoftToken(paths.launcherDataDir);
+  }
+
+  // Save profile WITHOUT refreshToken in file
   return writeJson(paths.profileFile, {
     nickname: profile.nickname.trim(),
     accountMode,
-    microsoft: accountMode === 'microsoft' ? microsoft : null,
+    microsoft: accountMode === 'microsoft' && microsoft
+      ? {
+          name: microsoft.name,
+          uuid: microsoft.uuid,
+          // NOTE: refreshToken is NOT saved to file - stored in OS keychain instead
+          xuid: microsoft.xuid ?? null,
+          expiresAt: microsoft.expiresAt ?? null
+        }
+      : null,
     lastPlayedAt: profile.lastPlayedAt ?? null,
     lastSessionSeconds: Math.max(0, Math.round(Number(profile.lastSessionSeconds) || 0)),
     totalPlaySeconds: Math.max(0, Math.round(Number(profile.totalPlaySeconds) || 0)),
@@ -146,12 +173,13 @@ export async function saveProfile(paths: LauncherPaths, profile: LauncherProfile
 }
 
 function normalizeMicrosoftProfile(profile: LauncherProfile['microsoft'] | undefined): LauncherProfile['microsoft'] {
-  if (!profile?.name || !profile.uuid || !profile.refreshToken) return null;
+  if (!profile?.name || !profile.uuid) return null;
 
   return {
     name: String(profile.name),
     uuid: String(profile.uuid),
-    refreshToken: String(profile.refreshToken),
+    // refreshToken will be loaded from secure storage separately
+    refreshToken: '', // Placeholder; actual token loaded from keychain
     xuid: profile.xuid ? String(profile.xuid) : null,
     expiresAt: typeof profile.expiresAt === 'number' ? profile.expiresAt : null
   };
@@ -160,6 +188,14 @@ function normalizeMicrosoftProfile(profile: LauncherProfile['microsoft'] | undef
 export function normalizeBackendUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return DEFAULT_BACKEND_URL;
+
+  // Security: warn about insecure HTTP connections
+  if (!trimmed.startsWith('http://localhost') && !trimmed.startsWith('http://127.0.0.1')) {
+    if (trimmed.startsWith('http://')) {
+      console.warn('⚠️ Backend URL uses HTTP instead of HTTPS. This connection is not encrypted!');
+    }
+  }
+
   return trimmed.replace(/\/+$/, '');
 }
 
