@@ -5,18 +5,18 @@ services:
     restart: unless-stopped
     working_dir: /data
     ports:
-      - "2121:2121"
+      - "${SYNC_PORT:-2121}:${SYNC_PORT:-2121}"
     environment:
-      PORT: "2121"
-      BIND_HOST: "0.0.0.0"
-      PUBLIC_URL: "https://dwargonmc-sync.petershub.xyz"
-      MAP_TARGET: "http://host.docker.internal:8888"
-      MC_HOST: "host.docker.internal"
-      MC_PORT: "25565"
-      ADMIN_TOKEN: "change-me"
-      MAP_ACCESS_CLIENT_ID: ""
-      MAP_ACCESS_CLIENT_SECRET: ""
-      MAP_REQUEST_HEADERS: ""
+      PORT: "${SYNC_PORT:-2121}"
+      BIND_HOST: "${SYNC_BIND_HOST:-0.0.0.0}"
+      PUBLIC_URL: "${PUBLIC_URL:-http://127.0.0.1:2121}"
+      MAP_TARGET: "${MAP_TARGET:-http://host.docker.internal:8888}"
+      MC_HOST: "${MC_HOST:-host.docker.internal}"
+      MC_PORT: "${MC_PORT:-25565}"
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-change-me}"
+      MAP_ACCESS_CLIENT_ID: "${MAP_ACCESS_CLIENT_ID:-}"
+      MAP_ACCESS_CLIENT_SECRET: "${MAP_ACCESS_CLIENT_SECRET:-}"
+      MAP_REQUEST_HEADERS: "${MAP_REQUEST_HEADERS:-}"
     volumes:
       - ./:/data
       - node-modules:/data/node_modules

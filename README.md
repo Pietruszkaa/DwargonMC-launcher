@@ -1,64 +1,68 @@
 # DwargonMC Launcher
 
-Portable launcher desktopowy dla serwera Minecraft DwargonMC.
+Desktop launcher for a Minecraft `1.21.1` NeoForge server. The launcher is built around a portable Windows `.exe`, local instance data, server-managed file sync, optional Microsoft login, and a small read-only sync backend.
 
-Launcher uruchamia Minecraft `1.21.1` z NeoForge, synchronizuje paczke plikow zarzadzanych przez serwer, pokazuje logi/crashe i obsluguje tryb non-premium/offline oraz opcjonalne logowanie Microsoft.
+The current repository ships the DwargonMC configuration, but the long-term direction is a reusable launcher core with server-specific branding/configuration.
 
-## Funkcje
+## Features
 
-- Electron + React/Vite jako aplikacja desktopowa.
-- Start Minecraft `1.21.1` NeoForge przez `minecraft-launcher-core`.
-- Tryb non-premium/offline jako domyslna sciezka konta.
-- Opcjonalne logowanie Microsoft przez `MSMC`.
-- Synchronizacja plikow z publicznego, read-only backendu Fastify.
-- Ochrona plikow gracza: sync aktualizuje i usuwa tylko pliki zarzadzane z prefixem `_`.
-- Synchronizacja i lokalna rotacja tla.
-- Cykliczny health check backendu i serwera MC.
-- Lista graczy, proxy mapy, logi i modal crasha.
-- First-run setup dla Windows portable `.exe`.
-- Powiadomienie o aktualizacji launchera z GitHub Releases.
-- Lokalny licznik czasu gry.
+- Electron desktop shell with React/Vite renderer.
+- Minecraft `1.21.1` NeoForge launch through `minecraft-launcher-core`.
+- Non-premium/offline mode as the default account flow.
+- Optional Microsoft login through `MSMC`.
+- Server-managed sync with SHA256 verification.
+- Local file safety: sync manages only server-owned files and does not remove player files.
+- Background image sync and rotation.
+- Backend, Minecraft server, player list, and map health polling.
+- Map proxy support through the sync server.
+- Crash modal with recent logs and copy support.
+- First-run setup for Windows portable builds.
+- Update notification through GitHub Releases.
+- Local playtime tracking.
+- Modrinth browser for optional client-side mods, shaders, and resource packs.
+- Admin announcements backed by a JSON file.
 
-## Struktura repo
+## Repository Layout
 
 ```text
-launcher/       Electron + React/Vite launcher
-sync-server/    Fastify read-only sync server, health endpoint i proxy mapy
-download-site/  Statyczna strona pobierania
-admin-site/     Lekki panel admina
-docs/           Dokumentacja planu i release
+launcher/       Electron + React/Vite desktop app
+sync-server/    Fastify sync backend, health endpoint, map proxy, announcements
+admin-site/     Static admin UI for announcements and backend inspection
+download-site/  Static download/status page; kept lightweight
+docs/           Planning and release documentation
 ```
 
-## Wymagania
+## Requirements
 
-- Node.js `20+`
-- npm
-- Java `21+` na komputerze gracza
-- Windows dla produkcyjnych buildow launchera
+- Node.js `22` for development and CI.
+- npm.
+- Java `21+` recommended on player machines.
+- Windows for production launcher release builds.
 
-Buildy Linux nie sa aktualnym celem release.
+Linux launcher builds are not part of the current release target.
 
-## Development
+## Quick Start
 
-Instalacja zaleznosci:
+Install workspace dependencies:
 
 ```bash
-npm install
+npm install --prefix launcher
+npm install --prefix sync-server
 ```
 
-Uruchomienie renderera:
+Run the launcher renderer:
 
 ```bash
 npm run launcher:dev
 ```
 
-Uruchomienie Electrona w drugim terminalu:
+Run Electron in a second terminal:
 
 ```bash
 npm run launcher:dev:electron
 ```
 
-Walidacja:
+Validate the launcher:
 
 ```bash
 npm run launcher:typecheck
@@ -66,17 +70,17 @@ npm run launcher:test
 npm run launcher:build
 ```
 
-Build Windows:
+Build Windows portable output:
 
 ```bash
 npm run launcher:dist:win
 ```
 
-Artefakty sa zapisywane w `launcher/release/`.
+Build artifacts are written to `launcher/release/`.
 
-## Dane launchera
+## Runtime Data
 
-Windows portable build trzyma dane obok aplikacji:
+Portable builds keep player data next to the application/instance:
 
 ```text
 minecraft/
@@ -85,27 +89,27 @@ launcher-data/profile.json
 assets/backgrounds/
 ```
 
-Te katalogi sa danymi runtime i nie powinny trafic do git.
+These paths are runtime data and must stay out of git.
 
-## Sync server
+## Sync Server
 
-`sync-server/` jest samodzielna aplikacja Fastify. Na serwer mozna przeniesc sam folder `sync-server/`, zainstalowac zaleznosci i uruchomic proces.
+`sync-server/` is a standalone Fastify application. It can be deployed independently from the launcher.
 
-Instalacja i start:
+Install and run:
 
 ```bash
 cd sync-server
-npm install
+npm ci --omit=dev
 npm start
 ```
 
-Po zmianie plikow w `sync-server/files/` albo `sync-server/backgrounds/` trzeba wygenerowac manifest:
+Generate the sync manifest after changing files or backgrounds:
 
 ```bash
 npm run manifest
 ```
 
-Publiczne endpointy:
+Public endpoints:
 
 ```text
 GET /health
@@ -117,19 +121,19 @@ GET /map
 GET /map/*
 ```
 
-Endpoint administracyjny:
+Admin endpoint:
 
 ```text
 PUT /admin/announcements.json
 Authorization: Bearer <ADMIN_TOKEN>
 ```
 
-Zmienne srodowiskowe:
+Main environment variables:
 
 ```text
 PORT=2121
 BIND_HOST=0.0.0.0
-PUBLIC_URL=https://example.com
+PUBLIC_URL=https://sync.example.com
 MAP_TARGET=http://127.0.0.1:8888
 MC_HOST=127.0.0.1
 MC_PORT=25565
@@ -139,38 +143,41 @@ MAP_ACCESS_CLIENT_SECRET=
 MAP_REQUEST_HEADERS=
 ```
 
-`MAP_ACCESS_CLIENT_ID`, `MAP_ACCESS_CLIENT_SECRET` i `MAP_REQUEST_HEADERS` sa opcjonalnymi naglowkami dla chronionego upstreamu mapy. Dzialaja tylko wtedy, gdy to sync-server odpytuje `MAP_TARGET`.
-`ADMIN_TOKEN` wlacza zapis komunikatow przez `admin-site`. Bez tokenu endpoint administracyjny zawsze zwraca `401`.
+`ADMIN_TOKEN` is required for write operations. Public launcher traffic remains read-only.
 
-Przykladowy unit systemd jest w `sync-server/systemd/dwargonmc-sync-server.service`.
+## Docker / Dockage
 
-### Docker / Dockage
+The root `docker-compose.yml` is designed for simple Dockage-style deployment. It uses official base images and bind mounts local project folders instead of building custom images.
 
-Repo zawiera compose w stylu Dockage: oficjalny bazowy image + bind mount katalogu projektu. Rootowy `docker-compose.yml` nie uzywa `build`, wiec Dockage nie musi widziec Dockerfile.
-Rootowy compose uzywa `network_mode: host`, zeby backend widzial mape i serwer MC na `127.0.0.1`.
+Copy `.env.example` to `.env` and adjust paths/domains:
 
-```text
-docker-compose.yml
-sync-server/docker-compose.yml
-download-site/docker-compose.yml
-admin-site/docker-compose.yml
+```bash
+cp .env.example .env
 ```
 
-Jesli Dockage wskazuje compose z roota projektu, uzyj `docker-compose.yml`. Serwisy maja wtedy konteksty:
-
-```text
-/home/kubiq/DwargonMC/sync-server
-/home/kubiq/DwargonMC/admin-site
-/home/kubiq/DwargonMC/download-site
-```
-
-Start calego stacka:
+Start the stack:
 
 ```bash
 docker compose up -d
 ```
 
-Backend uzywa `sync-server/` jako katalogu danych. W tym katalogu trzymaj:
+Default services:
+
+```text
+2121 - sync-server
+8081 - download-site
+8082 - admin-site
+```
+
+If the Minecraft server or map is hosted on the same machine, `network_mode: host` lets the sync server reach local services through `127.0.0.1`.
+
+Generate the manifest inside the root compose:
+
+```bash
+docker compose exec sync-server node /data/generate-manifest.js /data
+```
+
+Backend data layout:
 
 ```text
 sync-server/files/
@@ -179,86 +186,56 @@ sync-server/manifest.json
 sync-server/announcements.json
 ```
 
-Po zmianie paczki plikow wygeneruj manifest w kontenerze:
+## Sync Rules
 
-```bash
-cd sync-server
-docker compose exec sync-server node generate-manifest.js /data
-```
+The backend stores files without the local managed prefix. The launcher writes server-managed files locally with `_`.
 
-Albo z rootowego compose:
-
-```bash
-docker compose exec sync-server node /data/generate-manifest.js /data
-```
-
-Przed deployem zmien w `docker-compose.yml` albo `sync-server/docker-compose.yml`:
-
-- `ADMIN_TOKEN`
-- `PUBLIC_URL`
-- `MAP_TARGET`
-- `MC_HOST`
-- porty publikowanych stron, jesli ida za reverse proxy
-
-Domyslne porty hosta w rootowym compose:
-
-```text
-2121 - sync-server
-8081 - download-site
-8082 - admin-site
-```
-
-## Zasady synca
-
-Backend trzyma pliki bez prefixu zarzadzanego. Launcher zapisuje je lokalnie z `_`.
-
-Przyklad:
+Example:
 
 ```text
 sync-server/files/mods/sodium.jar
 minecraft/mods/_sodium.jar
 ```
 
-Launcher moze aktualizowac albo usuwac tylko osierocone pliki zarzadzane z `_`. Pliki gracza bez `_` nie sa ruszane przez sync.
+The launcher may update or remove only managed orphan files. Player files without the managed prefix are not touched by sync.
 
-Jesli backend nie odpowiada, launcher pokazuje ostrzezenie, ze pliki nie zostaly zweryfikowane, ale nie blokuje startu gry.
+If the backend is unavailable, the launcher warns that files were not verified but does not block game launch.
 
 ## Release
 
-Windows release jest publikowany przez GitHub Actions i GitHub Releases.
+Windows releases are published through GitHub Actions and GitHub Releases.
 
-1. Zmien wersje w:
-   - `package.json`
-   - `launcher/package.json`
-   - `launcher/package-lock.json`
+Release flow:
 
-2. Zweryfikuj lokalnie:
-
-```bash
-npm run launcher:typecheck
-npm run launcher:test
-npm run launcher:build
-```
-
-3. Wypchnij tag wersji:
+1. Create a version tag:
 
 ```bash
 git tag v1.2.0
 git push origin main --tags
 ```
 
-Workflow release ustawia wersje z taga `vX.Y.Z` w plikach package, buduje Windows portable `.exe`, generuje `SHA256SUMS.txt` i publikuje assety w GitHub Releases.
-UI pokazuje wersje z `app.getVersion()`, a plik `.exe` dostaje nazwe w formacie `DwargonMC Launcher-X.Y.Z-portable.exe`.
+2. The release workflow:
 
-Jesli w repo ustawiony jest sekret `VIRUSTOTAL_API_KEY`, workflow wysyla `.exe` do VirusTotal i dopisuje link do raportu w opisie release. Brak sekretu pomija skan bez przerywania buildu.
+- applies the tag version to package metadata;
+- installs launcher and sync-server dependencies;
+- runs typecheck and tests;
+- builds the Windows portable `.exe`;
+- generates `SHA256SUMS.txt`;
+- optionally uploads the `.exe` to VirusTotal when `VIRUSTOTAL_API_KEY` is configured;
+- publishes assets to GitHub Releases.
 
-Niepodpisany build Windows moze byc blokowany przez SmartScreen albo Smart App Control na czesci komputerow. Do czasu podpisywania kodu uzytkownik moze potrzebowac odblokowac pobrany `.exe` we wlasciwosciach pliku.
+Details: [docs/release.md](docs/release.md).
 
-Szczegoly: `docs/release.md`.
+## Security
 
-## Bezpieczenstwo
+- Public sync endpoints are read-only.
+- Admin writes require `ADMIN_TOKEN`.
+- Microsoft tokens stay local to the launcher profile and are not sent to the sync backend.
+- Runtime data, release artifacts, logs, Minecraft files, and server pack contents should not be committed unless intentionally published.
+- Known remaining npm audit findings currently come from `minecraft-launcher-core -> request`. They require replacing, patching, or forking that dependency.
 
-- Sync server jest read-only dla publicznego ruchu launchera.
-- Tokeny Microsoft sa trzymane tylko lokalnie w profilu launchera i nie sa wysylane do backendu DwargonMC.
-- Funkcje zapisu w panelu admina musza miec autoryzacje przed publicznym deployem.
-- Artefakty release, dane runtime, logi, lokalne pliki Minecraft i zawartosc paczki modow nie powinny trafiac do git, jesli nie sa publikowane celowo.
+Report security issues privately when possible. See [SECURITY.md](SECURITY.md).
+
+## Project Status
+
+This is an active private/server-focused launcher project. The repo is public for transparency and CI/release distribution, but the current branding and default endpoints are still DwargonMC-specific.
