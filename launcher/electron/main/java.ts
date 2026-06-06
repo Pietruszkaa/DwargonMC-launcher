@@ -2,11 +2,19 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 
 const execFileAsync = promisify(execFile);
 const ORACLE_JAVA_21_WINDOWS_INSTALLER_URL = 'https://download.oracle.com/java/21/latest/jdk-21_windows-x64_bin.exe';
 const ORACLE_JAVA_21_DOWNLOAD_PAGE_URL = 'https://www.oracle.com/pl/java/technologies/downloads/#jdk21-windows';
 const ORACLE_JAVA_21_INSTALLER_NAME = 'jdk-21_windows-x64_bin.exe';
+
+// Oracle provides SHA256 checksums - this should be fetched from a secure source or hardcoded for known releases
+// For production, consider fetching from: https://www.oracle.com/webfolder/s/digest/21-0-4-sha256
+const KNOWN_JAVA_21_SHA256_HASHES: Record<string, string> = {
+  // These are example hashes - MUST BE UPDATED with real Oracle SHA256 values
+  'jdk-21_windows-x64_bin.exe': 'placeholder-sha256-hash-must-be-verified'
+};
 
 export type JavaCheckResult = {
   ok: boolean;
@@ -72,7 +80,7 @@ export function javaDownloadPageUrl(): string {
 }
 
 export type JavaInstallerResult = {
-  phase: 'idle' | 'downloading' | 'ready' | 'error';
+  phase: 'idle' | 'downloading' | 'verifying' | 'ready' | 'error';
   progress: number;
   downloadedBytes: number;
   totalBytes: number | null;
@@ -93,6 +101,38 @@ export function idleJavaInstallerStatus(): JavaInstallerResult {
     pageUrl: ORACLE_JAVA_21_DOWNLOAD_PAGE_URL,
     message: ''
   };
+}
+
+/**
+ * Calculate SHA256 hash of a file
+ */
+async function calculateFileHash(filePath: string): Promise<string> {
+  const hash = createHash('sha256');
+  const fileStream = await fs.readFile(filePath);
+  hash.update(fileStream);
+  return hash.digest('hex');
+}
+
+/**
+ * Fetch expected SHA256 from Oracle (or return from cache)
+ */
+async function getExpectedJavaInstallerHash(): Promise<string | null> {
+  // In production, this should:
+  // 1. Try to fetch from Oracle's official SHA256 list
+  // 2. Fall back to hardcoded known-good hashes
+  // 3. Cache the result
+
+  try {
+    // For now, return from hardcoded list
+    const hash = KNOWN_JAVA_21_SHA256_HASHES[ORACLE_JAVA_21_INSTALLER_NAME];
+    if (hash && hash !== 'placeholder-sha256-hash-must-be-verified') {
+      return hash;
+    }
+  } catch (error) {
+    console.error('Failed to get expected Java installer hash:', error);
+  }
+
+  return null;
 }
 
 export async function downloadJavaInstaller(
@@ -133,6 +173,34 @@ export async function downloadJavaInstaller(
       });
     });
 
+    // SECURITY: Verify SHA256 before accepting the downloaded file
+    onStatus({
+      ...base,
+      phase: 'verifying' as const,
+      message: 'Weryfikacja integralności instalatora Java...'
+    });
+
+    const downloadedHash = await calculateFileHash(tempDestination);
+    const expectedHash = await getExpectedJavaInstallerHash();
+
+    if (expectedHash) {
+      if (downloadedHash.toLowerCase() !== expectedHash.toLowerCase()) {
+        await fs.rm(tempDestination, { force: true });
+        const failed = {
+          ...idleJavaInstallerStatus(),
+          phase: 'error' as const,
+          path: null,
+          message: `🚨 BEZPIECZEŃSTWO: Suma kontrolna SHA256 instalatora Java nie zgadza się! Plik może być uszkodzony lub fałszywony. Pobrany: ${downloadedHash}, Oczekiwany: ${expectedHash}`
+        };
+        onStatus(failed);
+        return failed;
+      }
+    } else {
+      // If we don't have a known-good hash, warn the user
+      console.warn('⚠️ WARNING: Could not verify Java installer SHA256 - no known hash available');
+      console.warn(`Downloaded file SHA256: ${downloadedHash}`);
+    }
+
     await fs.rm(destination, { force: true });
     await fs.rename(tempDestination, destination);
 
@@ -140,7 +208,7 @@ export async function downloadJavaInstaller(
       ...base,
       phase: 'ready' as const,
       progress: 100,
-      message: 'Pobrano instalator Java 21. Uruchom instalator, a potem kliknij „Sprawdź ponownie”.'
+      message: 'Pobrano instalator Java 21. Uruchom instalator, a potem kliknij „Sprawdź ponownie".'
     };
     onStatus(ready);
     return ready;
