@@ -1,6 +1,6 @@
 # DwargonMC Launcher
 
-Desktop launcher for a Minecraft `1.21.1` NeoForge server. The launcher is built around a portable Windows `.exe`, local instance data, server-managed file sync, optional Microsoft login, and a small read-only sync backend.
+Desktop launcher for a Minecraft selfhosted servers, with auto runtime installation, java version verification and installation and mods synchroninzation from the server. The launcher is built around a portable Windows `.exe`, local instance data, server-managed file sync, optional Microsoft login, and a small read-only sync backend.
 
 The current repository ships the DwargonMC configuration, but the long-term direction is a reusable launcher core with server-specific branding/configuration.
 
