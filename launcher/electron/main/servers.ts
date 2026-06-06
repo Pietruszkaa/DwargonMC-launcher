@@ -89,6 +89,31 @@ export async function addServer(paths: LauncherPaths, registry: ServerRegistry, 
   });
 }
 
+export async function refreshServerName(
+  paths: LauncherPaths,
+  registry: ServerRegistry,
+  serverId: string
+): Promise<ServerRegistry | null> {
+  const server = registry.servers.find((s) => s.id === serverId);
+  if (!server) return null;
+
+  try {
+    const info = await fetchServerInfo(server.backendUrl);
+    const newName = info.name || server.name;
+    if (newName === server.name) return null; // no change
+
+    const updated = {
+      ...registry,
+      servers: registry.servers.map((s) =>
+        s.id === serverId ? { ...s, name: newName } : s
+      )
+    };
+    return saveServerRegistry(paths, updated);
+  } catch {
+    return null;
+  }
+}
+
 export async function activateServer(paths: LauncherPaths, registry: ServerRegistry, serverId: string): Promise<ServerRegistry> {
   const now = new Date().toISOString();
   const server = registry.servers.find((entry) => entry.id === serverId);
