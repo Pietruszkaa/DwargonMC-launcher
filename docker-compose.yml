@@ -6,18 +6,18 @@ services:
     working_dir: /data
     network_mode: host
     environment:
-      PORT: "2121"
-      BIND_HOST: "0.0.0.0"
-      PUBLIC_URL: "https://dwargonmc-sync.petershub.xyz"
-      MAP_TARGET: "http://127.0.0.1:8888"
-      MC_HOST: "127.0.0.1"
-      MC_PORT: "25565"
-      ADMIN_TOKEN: "change-me"
-      MAP_ACCESS_CLIENT_ID: ""
-      MAP_ACCESS_CLIENT_SECRET: ""
-      MAP_REQUEST_HEADERS: ""
+      PORT: "${SYNC_PORT:-2121}"
+      BIND_HOST: "${SYNC_BIND_HOST:-0.0.0.0}"
+      PUBLIC_URL: "${PUBLIC_URL:-http://127.0.0.1:2121}"
+      MAP_TARGET: "${MAP_TARGET:-http://127.0.0.1:8888}"
+      MC_HOST: "${MC_HOST:-127.0.0.1}"
+      MC_PORT: "${MC_PORT:-25565}"
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-change-me}"
+      MAP_ACCESS_CLIENT_ID: "${MAP_ACCESS_CLIENT_ID:-}"
+      MAP_ACCESS_CLIENT_SECRET: "${MAP_ACCESS_CLIENT_SECRET:-}"
+      MAP_REQUEST_HEADERS: "${MAP_REQUEST_HEADERS:-}"
     volumes:
-      - /home/kubiq/DwargonMC/sync-server:/data
+      - ${DWARGONMC_ROOT:-.}/sync-server:/data
       - sync-server-node-modules:/data/node_modules
     command:
       - sh
@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - /home/kubiq/DwargonMC/admin-site:/usr/share/nginx/html:ro
+      - ${DWARGONMC_ROOT:-.}/admin-site:/usr/share/nginx/html:ro
     command:
       - sh
       - -lc
@@ -52,7 +52,7 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - /home/kubiq/DwargonMC/download-site:/usr/share/nginx/html:ro
+      - ${DWARGONMC_ROOT:-.}/download-site:/usr/share/nginx/html:ro
     command:
       - sh
       - -lc
