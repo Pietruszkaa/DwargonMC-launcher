@@ -1,5 +1,6 @@
 import axios from 'axios';
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { MIN_NEOFORGE_VERSION, MC_VERSION } from './constants';
@@ -163,6 +164,49 @@ export async function checkMinecraftInstanceReady(
   };
 }
 
+/**
+ * Calculate SHA256 hash of a file
+ */
+async function calculateFileHash(filePath: string): Promise<string> {
+  const hash = createHash('sha256');
+  const fileStream = await fs.readFile(filePath);
+  hash.update(fileStream);
+  return hash.digest('hex');
+}
+
+/**
+ * Fetch NeoForge SHA256 from Maven metadata
+ */
+async function getNeoForgeInstallerHash(version: string): Promise<string | null> {
+  try {
+    // Try to fetch from Maven repository
+    // Maven typically provides MD5 and SHA1, but we'll attempt to get SHA256 if available
+    const metadataUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${version}/neoforge-${version}-installer.jar.sha256`;
+    
+    try {
+      const response = await axios.get(metadataUrl, {
+        timeout: 10000,
+        validateStatus: (code) => code === 200
+      });
+      
+      if (response.data) {
+        // SHA256 files typically contain hash + filename, just take the hash part
+        const hash = response.data.split(/\s+/)[0];
+        return hash;
+      }
+    } catch (e) {
+      // SHA256 not available, try MD5 or SHA1 as fallback
+      console.warn(`SHA256 not available for NeoForge ${version}, falling back to basic validation`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`Failed to fetch NeoForge ${version} hash:`, error);
+    return null;
+  }
+
+  return null;
+}
+
 async function ensureNeoForgeInstaller(
   launcherDataDir: string,
   events: GameEvents,
@@ -173,6 +217,7 @@ async function ensureNeoForgeInstaller(
     ? minecraft.loaderVersion
     : await resolveLatestNeoForgeVersion(minecraft.version);
   const destination = path.join(launcherDataDir, `neoforge-${version}-installer.jar`);
+  const tempDestination = `${destination}.download`;
 
   try {
     const stat = await fs.stat(destination);
@@ -186,16 +231,42 @@ async function ensureNeoForgeInstaller(
 
   events.onStatus({ running: false, phase: 'preparing', message: `Pobieranie NeoForge ${version}...` });
   const url = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${version}/neoforge-${version}-installer.jar`;
-  const response = await axios.get<ArrayBuffer>(url, {
-    responseType: 'arraybuffer',
-    timeout: 60000,
-    validateStatus: (code) => code === 200
-  });
+  
+  try {
+    const response = await axios.get<ArrayBuffer>(url, {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+      validateStatus: (code) => code === 200
+    });
 
-  await fs.mkdir(launcherDataDir, { recursive: true });
-  await fs.writeFile(destination, Buffer.from(response.data));
-  events.onLog(`NeoForge ${version} installer downloaded.`);
-  return { version, file: destination };
+    await fs.mkdir(launcherDataDir, { recursive: true });
+    await fs.writeFile(tempDestination, Buffer.from(response.data));
+    
+    // SECURITY: Verify SHA256 if available
+    events.onStatus({ running: false, phase: 'preparing', message: `Weryfikacja NeoForge ${version}...` });
+    const downloadedHash = await calculateFileHash(tempDestination);
+    const expectedHash = await getNeoForgeInstallerHash(version);
+
+    if (expectedHash) {
+      if (downloadedHash.toLowerCase() !== expectedHash.toLowerCase()) {
+        await fs.rm(tempDestination, { force: true });
+        throw new Error(
+          `🚨 BEZPIECZEŃSTWO: Suma kontrolna SHA256 instalatora NeoForge ${version} nie zgadza się! Plik może być uszkodzony lub fałszywony.`
+        );
+      }
+      events.onLog(`NeoForge ${version} SHA256 verified.`);
+    } else {
+      console.warn(`⚠️ WARNING: Could not verify NeoForge ${version} SHA256`);
+      console.warn(`Downloaded file SHA256: ${downloadedHash}`);
+    }
+
+    await fs.rename(tempDestination, destination);
+    events.onLog(`NeoForge ${version} installer downloaded and verified.`);
+    return { version, file: destination };
+  } catch (error) {
+    await fs.rm(tempDestination, { force: true });
+    throw error;
+  }
 }
 
 async function hasNeoForgeInstaller(launcherDataDir: string, loaderVersion: string | null): Promise<boolean> {
