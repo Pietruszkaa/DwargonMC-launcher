@@ -13,7 +13,7 @@ import { loginMicrosoft, refreshMicrosoft, type MclcAuthorization } from './micr
 import { checkModrinthAddonUpdates, identifyInstalledModrinthProjects, installModrinthProject, readSearchCache, searchModrinth, type ModrinthInstallRequest, type ModrinthSearchRequest } from './modrinth';
 import { buildLauncherPaths, ensureLauncherDirs, getLauncherPaths, type LauncherPaths } from './paths';
 import { getRamInfo } from './ram';
-import { activateServer, activeServer, addServer, readServerRegistry, type ServerMinecraftConfig, type ServerRegistry } from './servers';
+import { activateServer, activeServer, addServer, readServerRegistry, refreshServerName, type ServerMinecraftConfig, type ServerRegistry } from './servers';
 import { resolveSetupPaths, type SetupState } from './setup';
 import { checkSyncPlan, listManagedLocalFiles, listPlayerAddonFiles, removePlayerAddonFile, runSync, type ManagedFile, type PlayerAddonFile, type PlayerAddonKind, type SyncStatus } from './sync';
 import {
@@ -519,6 +519,14 @@ async function refreshHealth(): Promise<void> {
 
   try {
     state.health = await getHealth(state.settings.backendUrl);
+
+    // Refresh server name from server.json if it changed on the admin-site
+    const activeServerId = state.servers.activeServerId;
+    if (activeServerId) {
+      const updated = await refreshServerName(basePaths, state.servers, activeServerId);
+      if (updated) state.servers = updated;
+    }
+
     emitState();
   } finally {
     healthPollInFlight = false;
