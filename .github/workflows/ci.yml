@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  launcher:
+    name: Launcher checks
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            launcher/package-lock.json
+            sync-server/package-lock.json
+
+      - name: Install launcher dependencies
+        run: npm ci --prefix launcher
+
+      - name: Install sync-server dependencies
+        run: npm ci --prefix sync-server
+
+      - name: Typecheck
+        run: npm run typecheck --prefix launcher
+
+      - name: Test
+        run: npm test --prefix launcher
+
+      - name: Build
+        run: npm run build --prefix launcher
