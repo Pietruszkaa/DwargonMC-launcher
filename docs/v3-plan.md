@@ -2,7 +2,7 @@
 
 ## Cel v3
 
-V3 ma wyciagnac launcher z fazy "DwargonMC-specific" do utrzymywalnego, bezpieczniejszego launchera dla wielu serwerow/instancji, z normalnym updaterem, podpisywaniem aplikacji i lepszym panelem admina. DwargonMC zostaje pierwszym domyslnym profilem, ale kod nie powinien byc na stale przyklejony do jednej domeny, nazwy i paczki.
+V3 ma wyciagnac launcher z fazy "DwargonMC-specific" do utrzymywalnego, bezpieczniejszego launchera dla wielu serwerow/instancji, z normalnym updaterem, lepszym release UX i lepszym panelem admina. DwargonMC zostaje pierwszym domyslnym profilem, ale kod nie powinien byc na stale przyklejony do jednej domeny, nazwy i paczki.
 
 ## Assumptions
 
@@ -12,36 +12,31 @@ V3 ma wyciagnac launcher z fazy "DwargonMC-specific" do utrzymywalnego, bezpiecz
 - Branding i konfiguracja serwera w v3 moga byc pobierane z backendu, ale musza miec lokalny fallback.
 - Chat z launchera jest tylko pomyslem bonusowym, nie celem v3.
 - Download site moze zostac ograniczony albo usuniety, jesli GitHub Releases i updater robia cala robote dystrybucji.
+- Podpisywanie aplikacji zostaje odlozone, dopoki nie ma darmowej albo taniej opcji z realnym zyskiem dla graczy.
 
-## Priorytet A - Release, updater, signing
+## Priorytet A - Updater i release UX
 
-### Podpisywanie aplikacji
+### Decyzja o signing
 
-Rekomendacja: podpisywanie w GitHub Actions, nie lokalnie.
+Signing odpuszczamy w v3 jako aktywny zakres.
 
 Powody:
-- release build i podpis sa powtarzalne;
-- certyfikat/sekrety nie laduja na lokalnych maszynach;
-- latwiej wymusic, ze tylko tagowany release jest podpisywany;
-- pasuje do obecnego flow GitHub Releases.
+- realny, zaufany code signing dla Windows zwykle kosztuje;
+- self-signed cert nie rozwiazuje problemu dla graczy;
+- Microsoft Store podpisuje pakiety, ale to nie pasuje do obecnego modelu portable `.exe`;
+- darmowe opcje typu SignPath OSS moga byc warte sprawdzenia pozniej, ale nie powinny blokowac v3.
 
-Opcje:
-- standardowy code signing certificate zapisany jako sekret/plik w GitHub Actions;
-- docelowo lepiej EV/OV cert albo provider z KMS/HSM, jesli koszt ma sens;
-- lokalne podpisywanie tylko jako fallback awaryjny, nie standard.
-
-Do zrobienia:
-- dodac etap sign po buildzie `.exe`;
-- dopiero podpisany plik wysylac do VirusTotal;
-- release notes powinny pokazywac SHA256 podpisanego pliku;
-- dokumentacja: jak odnawiac certyfikat i gdzie jest uzywany.
+Zostaje jako future/optional:
+- paid OV/EV certificate;
+- SignPath Foundation albo podobna opcja dla open-source;
+- signing w GitHub Actions, jesli kiedys pojawi sie certyfikat.
 
 ### Lepszy updater
 
 V2 pobiera nowy `.exe`. V3 powinno miec normalny updater:
 - pobieranie w tle z widocznym progresem;
 - restart aplikacji po zgodzie uzytkownika;
-- weryfikacja SHA256 i podpisu;
+- weryfikacja SHA256 przed podmiana pliku;
 - rollback/fallback, jesli update sie nie uda;
 - jasny stan: sprawdzanie, pobieranie, gotowe do instalacji, blad;
 - mozliwosc pominiecia konkretnej wersji.
@@ -49,7 +44,16 @@ V2 pobiera nowy `.exe`. V3 powinno miec normalny updater:
 Kierunki:
 - `electron-updater` + GitHub Releases, jesli da sie sensownie pogodzic z portable;
 - wlasny updater helper, jesli portable single-exe bedzie konfliktowal z gotowymi mechanizmami;
-- release manifest `latest.yml/json` generowany w Actions, podpisany lub przynajmniej hashowany.
+- release manifest `latest.yml/json` generowany w Actions albo SHA256 z release assetow.
+
+### Instrukcja SmartScreen / Smart App Control
+
+Poniewaz v3 zostaje unsigned:
+- update popup i release notes musza jasno mowic, ze build jest niepodpisany;
+- README/release powinny miec krotka instrukcje `Wlasciwosci -> Odblokuj`;
+- download/release UI powinno pokazywac SHA256 i link VirusTotal;
+- launcher nie powinien udawac, ze problem SmartScreen jest naprawiony;
+- komunikat ma byc konkretny, bez straszenia i bez uczenia ignorowania wszystkich ostrzezen systemu.
 
 ### Jawniejsze pobieranie Javy
 
@@ -161,7 +165,7 @@ Ryzyka:
 
 - usunac lub odseparowac rzeczy DwargonMC-specific;
 - nazwy paczek i folderow generic tam, gdzie ma to sens;
-- dokumentacja release/signing/update;
+- dokumentacja release/update i known unsigned Windows behavior;
 - checklisty przed tagiem;
 - clean scripts dla lokalnych release/cache.
 
@@ -240,7 +244,7 @@ Decyzja robocza: funny mention, nie zakres v3.
 
 ## Decision Log
 
-- Signing: preferowane w GitHub Actions, bo release pipeline jest juz tag-based i czysty.
+- Signing: odlozone na future/optional; v3 skupia sie na updaterze, SHA256, VirusTotal i jasnej instrukcji SmartScreen.
 - Branding: preferowany JSON, bo najprostszy dla backendu, UI i walidacji.
 - Multi-instance: dane per serverId, z migracja obecnej instancji jako DwargonMC default.
 - Updater: v3 ma odejsc od prostego pobierania `.exe` w strone updatera z progresem, weryfikacja i restartem.
