@@ -37,15 +37,36 @@ export type Manifest = {
 };
 
 export type SyncStatus = {
-  phase: 'idle' | 'checking' | 'downloading' | 'complete' | 'warning' | 'error';
+  phase: 'idle' | 'checking' | 'ready' | 'downloading' | 'complete' | 'warning' | 'error';
   verified: boolean;
   message: string;
   currentFile?: string;
   completedFiles: number;
   totalFiles: number;
+  plan?: SyncPlan;
 };
 
 export type SyncReporter = (status: SyncStatus) => void;
+
+export type SyncPlanImpact = 'required' | 'recommended' | 'optional';
+
+export type SyncPlanChange = {
+  path: string;
+  kind: 'file' | 'background' | 'orphan' | 'background-orphan';
+  action: 'download' | 'update' | 'remove';
+  impact: SyncPlanImpact;
+};
+
+export type SyncPlan = {
+  version: string;
+  generatedAt: string;
+  changes: SyncPlanChange[];
+  hasChanges: boolean;
+  highestImpact: SyncPlanImpact | null;
+  requiredCount: number;
+  recommendedCount: number;
+  optionalCount: number;
+};
 
 export async function runSync(paths: LauncherPaths, backendUrl: string, report: SyncReporter): Promise<SyncStatus> {
   const checking = status('checking', false, 'Sprawdzanie manifestu...', 0, 0);
@@ -68,6 +89,117 @@ export async function runSync(paths: LauncherPaths, backendUrl: string, report: 
       kind === 'background' ? downloadBackgroundFile(backendUrl, remotePath, localPath) : downloadManagedFile(backendUrl, remotePath, localPath),
     report
   );
+}
+
+export async function checkSyncPlan(paths: LauncherPaths, backendUrl: string, report: SyncReporter): Promise<SyncStatus> {
+  const checking = status('checking', false, 'Sprawdzanie manifestu...', 0, 0);
+  report(checking);
+
+  let manifest: Manifest;
+
+  try {
+    manifest = await fetchManifest(backendUrl);
+  } catch {
+    const warning = status('warning', false, 'Nie udało się zweryfikować plików. Serwer synchronizacji nie odpowiada.', 0, 0);
+    report(warning);
+    return warning;
+  }
+
+  const plan = await buildSyncPlan(paths, manifest);
+  if (!plan.hasChanges) {
+    const complete = status('complete', true, 'Pliki zweryfikowane. Brak zmian do pobrania.', 0, 0);
+    report(complete);
+    return complete;
+  }
+
+  const ready = status(
+    'ready',
+    false,
+    syncPlanMessage(plan),
+    0,
+    plan.changes.length,
+    undefined,
+    plan
+  );
+  report(ready);
+  return ready;
+}
+
+export async function buildSyncPlan(paths: LauncherPaths, manifest: Manifest): Promise<SyncPlan> {
+  await fs.mkdir(paths.minecraftDir, { recursive: true });
+  await fs.mkdir(path.join(paths.assetsDir, 'backgrounds'), { recursive: true });
+
+  const changes: SyncPlanChange[] = [];
+
+  for (const file of manifest.files) {
+    const localPath = managedLocalPath(paths.minecraftDir, file.path);
+    const exists = await fileExists(localPath);
+    if (await fileNeedsDownload(localPath, file.sha256)) {
+      changes.push({
+        path: managedRelativePath(file.path),
+        kind: 'file',
+        action: exists ? 'update' : 'download',
+        impact: fileImpact(file.path)
+      });
+    }
+  }
+
+  const expectedManaged = new Set(manifest.files.map((file) => managedRelativePath(file.path)));
+  for (const file of await walkFiles(paths.minecraftDir)) {
+    const relative = normalizeRelativePath(path.relative(paths.minecraftDir, file));
+    if (path.basename(file).startsWith('_') && !expectedManaged.has(relative)) {
+      changes.push({
+        path: relative,
+        kind: 'orphan',
+        action: 'remove',
+        impact: fileImpact(relative)
+      });
+    }
+  }
+
+  if (Array.isArray(manifest.backgrounds)) {
+    for (const background of manifest.backgrounds) {
+      const localPath = backgroundLocalPath(paths.assetsDir, background.path);
+      const exists = await fileExists(localPath);
+      if (await fileNeedsDownload(localPath, background.sha256)) {
+        changes.push({
+          path: backgroundRelativePath(background.path),
+          kind: 'background',
+          action: exists ? 'update' : 'download',
+          impact: 'optional'
+        });
+      }
+    }
+
+    const backgroundsDir = path.join(paths.assetsDir, 'backgrounds');
+    const expectedBackgrounds = new Set(manifest.backgrounds.map((file) => backgroundRelativePath(file.path)));
+    for (const file of await walkFiles(backgroundsDir)) {
+      const relative = normalizeRelativePath(path.relative(backgroundsDir, file));
+      if (!expectedBackgrounds.has(relative)) {
+        changes.push({
+          path: relative,
+          kind: 'background-orphan',
+          action: 'remove',
+          impact: 'optional'
+        });
+      }
+    }
+  }
+
+  const requiredCount = changes.filter((change) => change.impact === 'required').length;
+  const recommendedCount = changes.filter((change) => change.impact === 'recommended').length;
+  const optionalCount = changes.filter((change) => change.impact === 'optional').length;
+
+  return {
+    version: manifest.version,
+    generatedAt: manifest.generatedAt,
+    changes,
+    hasChanges: changes.length > 0,
+    highestImpact: requiredCount ? 'required' : recommendedCount ? 'recommended' : optionalCount ? 'optional' : null,
+    requiredCount,
+    recommendedCount,
+    optionalCount
+  };
 }
 
 export async function syncManifestFiles(
@@ -344,7 +476,8 @@ function status(
   message: string,
   completedFiles: number,
   totalFiles: number,
-  currentFile?: string
+  currentFile?: string,
+  plan?: SyncPlan
 ): SyncStatus {
   return {
     phase,
@@ -352,7 +485,8 @@ function status(
     message,
     currentFile,
     completedFiles,
-    totalFiles
+    totalFiles,
+    plan
   };
 }
 
@@ -370,4 +504,28 @@ function normalizeRelativePath(relative: string): string {
 function isAddonFile(filePath: string): boolean {
   const extension = path.extname(filePath).toLowerCase();
   return extension === '.jar' || extension === '.zip';
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
+function fileImpact(remotePath: string): SyncPlanImpact {
+  const normalized = normalizeRemotePath(remotePath);
+  if (/^mods\/.+\.jar$/i.test(normalized)) return 'recommended';
+  if (/^config\//i.test(normalized)) return 'recommended';
+  return 'optional';
+}
+
+function syncPlanMessage(plan: SyncPlan): string {
+  if (plan.highestImpact === 'recommended') {
+    return `Sync wykrył ${plan.changes.length} zmian. Mody/config są mocno zalecane przed grą.`;
+  }
+
+  return `Sync wykrył ${plan.changes.length} zmian opcjonalnych.`;
 }

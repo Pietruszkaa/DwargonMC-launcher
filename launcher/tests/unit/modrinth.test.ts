@@ -7,6 +7,13 @@ import { buildLauncherPaths } from '../../electron/main/paths';
 import { addonSlugFromFileName, fileLooksLikeProject, listInstalledModrinthProjects, installModrinthProject, searchFacets } from '../../electron/main/modrinth';
 import { listPlayerAddonFiles } from '../../electron/main/sync';
 
+const minecraft = {
+  address: 'play.example.com',
+  version: '1.21.1',
+  loader: 'neoforge' as const,
+  loaderVersion: null
+};
+
 vi.mock('axios', () => ({
   default: {
     get: vi.fn(),
@@ -72,7 +79,7 @@ describe('Modrinth helpers', () => {
     });
 
     await expect(
-      installModrinthProject(paths, { projectId: 'pack-project', projectType: 'resourcepack' }, 'test')
+      installModrinthProject(paths, { projectId: 'pack-project', projectType: 'resourcepack' }, 'test', minecraft)
     ).resolves.toMatchObject({
       installed: false,
       fileName: 'pack.zip'
@@ -155,7 +162,7 @@ describe('Modrinth helpers', () => {
     });
 
     await expect(
-      installModrinthProject(paths, { projectId: 'sodium-project', projectType: 'mod', slug: 'sodium' }, 'test')
+      installModrinthProject(paths, { projectId: 'sodium-project', projectType: 'mod', slug: 'sodium' }, 'test', minecraft)
     ).resolves.toMatchObject({
       installed: false,
       fileName: 'sodium-neoforge-0.6.14.jar'

@@ -76,7 +76,10 @@ async function fetchAnnouncements(backendUrl: string): Promise<Announcement[]> {
 
   try {
     const response = await fetch(`${backendUrl}/announcements.json`, { signal: controller.signal });
-    if (!response.ok) throw new Error(`Komunikaty: HTTP ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 404) return [];
+      throw new Error(`Komunikaty: HTTP ${response.status}`);
+    }
     return normalizeAnnouncements(await response.json());
   } finally {
     clearTimeout(timer);

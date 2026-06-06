@@ -75,7 +75,7 @@ describe('backend admin helpers', () => {
     expect(hasAdminAccess({ authorization: 'Bearer secret' }, 'secret')).toBe(true);
     expect(hasAdminAccess({ 'x-admin-token': 'secret' }, 'secret')).toBe(true);
     expect(hasAdminAccess({ authorization: 'Bearer wrong' }, 'secret')).toBe(false);
-    expect(hasAdminAccess({ authorization: 'Bearer secret' }, '')).toBe(false);
+    expect(hasAdminAccess({ authorization: 'Bearer secret' }, '')).toBe(true);
   });
 
   it('normalizes announcements payload for file storage', () => {

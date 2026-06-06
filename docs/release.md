@@ -47,8 +47,20 @@ Jesli sekret nie istnieje, workflow pomija skan i publikuje release bez linku Vi
 
 ## Notes
 
-- Auto-update v2 czyta GitHub Releases z `Pietruszkaa/DwargonMC-launcher`.
-- Launcher szuka assetu `.exe`; `SHA256SUMS.txt` jest pokazywany jako dodatkowy plik release.
-- Publiczna strona pobierania czyta najnowszy release z GitHub API i pokazuje asset `.exe`, SHA256 oraz link VirusTotal z opisu release.
+- Updater launchera czyta GitHub Releases z `Pietruszkaa/DwargonMC-launcher`.
+- Launcher szuka assetu `.exe`; `SHA256SUMS.txt` sluzy do weryfikacji pobranego pliku aktualizacji.
+- Publiczna strona pobierania jest opcjonalna. GitHub Releases sa glownym zrodlem `.exe`, SHA256 i raportu VirusTotal.
 - Release nie powinien zawierac `minecraft/`, `launcher-data/`, `release/` z lokalnego komputera ani paczek sync-servera.
-- Unsigned build moze byc blokowany przez Microsoft Smart App Control/SmartScreen. Do czasu podpisywania kodu strona pobierania powinna pokazac instrukcje `Wlasciwosci -> Odblokuj`.
+
+## Windows SmartScreen / Smart App Control
+
+Microsoft SmartScreen albo Smart App Control moga zablokowac uruchomienie na czesci komputerow.
+
+Przed odblokowaniem pliku gracz powinien:
+
+1. Pobrac `.exe` z GitHub Release albo przez updater launchera.
+2. Sprawdzic, czy SHA256 zgadza sie z `SHA256SUMS.txt`.
+3. Opcjonalnie sprawdzic link VirusTotal w opisie release.
+4. Jesli Windows nadal blokuje plik: `Wlasciwosci` -> `Odblokuj` -> `Zastosuj`.
+
+Nie nalezy omijac ostrzezen systemu dla plikow pobranych spoza oficjalnego GitHub Release projektu.

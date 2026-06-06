@@ -1,6 +1,7 @@
 import type {
   CrashInfo,
   LauncherApi,
+  MinecraftInstanceCheck,
   LauncherProfile,
   LauncherSettings,
   LauncherState,
@@ -19,6 +20,22 @@ const settings: LauncherSettings = {
   jvmArgs: '',
   minecraftArgs: '',
   language: 'pl'
+};
+
+const mockServer = {
+  id: 'https://dwargonmc-sync.petershub.xyz',
+  instanceId: 'dwargonmc-sync-petershub-xyz-mock',
+  name: 'DwargonMC',
+  backendUrl: 'https://dwargonmc-sync.petershub.xyz',
+  minecraft: {
+    address: 'dwargonmc.playit.plus',
+    version: '1.21.1',
+    loader: 'neoforge' as const,
+    loaderVersion: null
+  },
+  authRequired: false,
+  addedAt: new Date().toISOString(),
+  lastUsedAt: new Date().toISOString()
 };
 
 const profile: LauncherProfile = {
@@ -45,6 +62,10 @@ let state: LauncherState = {
   },
   settings,
   profile,
+  servers: {
+    activeServerId: mockServer.id,
+    servers: [mockServer]
+  },
   health: {
     ok: false,
     serverOnline: false,
@@ -107,9 +128,21 @@ let state: LauncherState = {
     releaseName: null,
     releaseUrl: null,
     downloadUrl: null,
+    downloadName: null,
     sha256Url: null,
     notes: '',
-    error: null
+    error: null,
+    download: {
+      phase: 'idle',
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: null,
+      filePath: null,
+      fileName: null,
+      expectedSha256: null,
+      actualSha256: null,
+      message: ''
+    }
   },
   session: {
     activeStartedAt: null,
@@ -124,6 +157,16 @@ let state: LauncherState = {
       path: 'java',
       version: null,
       message: 'Mock: Java nie została sprawdzona.'
+    },
+    javaInstaller: {
+      phase: 'idle',
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: null,
+      path: null,
+      url: 'https://download.oracle.com/java/21/latest/jdk-21_windows-x64_bin.exe',
+      pageUrl: 'https://www.oracle.com/pl/java/technologies/downloads/#jdk21-windows',
+      message: ''
     }
   }
 };
@@ -131,6 +174,7 @@ let state: LauncherState = {
 const stateListeners = new Set<(next: LauncherState) => void>();
 const logListeners = new Set<(line: string) => void>();
 const crashListeners = new Set<(crash: CrashInfo) => void>();
+const instanceListeners = new Set<(check: MinecraftInstanceCheck) => void>();
 
 function emitState(): void {
   stateListeners.forEach((listener) => listener(state));
@@ -141,6 +185,45 @@ export function getLauncherApi(): LauncherApi {
 
   return {
     async getState() {
+      return state;
+    },
+    async addServer(backendUrl) {
+      const normalized = backendUrl.trim().replace(/\/+$/, '');
+      const server = {
+        id: normalized,
+        instanceId: normalized.replace(/^https?:\/\//, '').replace(/[^a-z0-9_-]+/gi, '-').toLowerCase(),
+        name: new URL(normalized).hostname,
+        backendUrl: normalized,
+        minecraft: {
+          address: null,
+          version: '1.21.1',
+          loader: 'neoforge' as const,
+          loaderVersion: null
+        },
+        authRequired: false,
+        addedAt: new Date().toISOString(),
+        lastUsedAt: new Date().toISOString()
+      };
+      state = {
+        ...state,
+        settings: { ...state.settings, backendUrl: normalized },
+        servers: {
+          activeServerId: server.id,
+          servers: [...state.servers.servers.filter((entry) => entry.id !== server.id), server]
+        }
+      };
+      emitState();
+      return state;
+    },
+    async switchServer(serverId) {
+      const server = state.servers.servers.find((entry) => entry.id === serverId);
+      if (!server) throw new Error('Nie znaleziono serwera.');
+      state = {
+        ...state,
+        settings: { ...state.settings, backendUrl: server.backendUrl },
+        servers: { ...state.servers, activeServerId: server.id }
+      };
+      emitState();
       return state;
     },
     async saveSettings(next) {
@@ -195,11 +278,40 @@ export function getLauncherApi(): LauncherApi {
     },
     async runSync() {
       const sync: SyncStatus = {
-        phase: 'warning',
+        phase: 'ready',
         verified: false,
-        message: 'Mock: pliki nie zostały zweryfikowane.',
+        message: 'Mock: sync wykrył zmiany do potwierdzenia.',
         completedFiles: 0,
-        totalFiles: 0
+        totalFiles: 1,
+        plan: {
+          version: 'mock',
+          generatedAt: new Date().toISOString(),
+          changes: [
+            {
+              path: 'mods/_mock.jar',
+              kind: 'file',
+              action: 'download',
+              impact: 'recommended'
+            }
+          ],
+          hasChanges: true,
+          highestImpact: 'recommended',
+          requiredCount: 0,
+          recommendedCount: 1,
+          optionalCount: 0
+        }
+      };
+      state = { ...state, sync };
+      emitState();
+      return sync;
+    },
+    async applySync() {
+      const sync: SyncStatus = {
+        phase: 'complete',
+        verified: true,
+        message: 'Mock: pliki zsynchronizowane.',
+        completedFiles: 1,
+        totalFiles: 1
       };
       state = { ...state, sync };
       emitState();
@@ -207,6 +319,9 @@ export function getLauncherApi(): LauncherApi {
     },
     async refreshAnnouncements() {
       return state.announcements;
+    },
+    async getModrinthCache() {
+      return null;
     },
     async searchModrinth(request) {
       return [
@@ -273,6 +388,24 @@ export function getLauncherApi(): LauncherApi {
     async openUpdateDownload() {
       return undefined;
     },
+    async downloadUpdate() {
+      state.update.download = {
+        phase: 'ready',
+        progress: 100,
+        downloadedBytes: 0,
+        totalBytes: null,
+        filePath: '/mock/Dwargon Launcher update.exe',
+        fileName: 'Dwargon Launcher update.exe',
+        expectedSha256: null,
+        actualSha256: '0'.repeat(64),
+        message: 'Mock: aktualizacja pobrana.'
+      };
+      emitState();
+      return state.update.download;
+    },
+    async showDownloadedUpdate() {
+      return undefined;
+    },
     async refreshJava() {
       state = {
         ...state,
@@ -290,11 +423,21 @@ export function getLauncherApi(): LauncherApi {
       return state.system.java;
     },
     async downloadJavaInstaller() {
-      return {
-        started: true,
+      state.system.javaInstaller = {
+        phase: 'ready',
+        progress: 100,
+        downloadedBytes: 0,
+        totalBytes: null,
         path: '/mock/jdk-21_windows-x64_bin.exe',
-        message: 'Mock: uruchomiono instalator Java 21.'
+        url: 'https://download.oracle.com/java/21/latest/jdk-21_windows-x64_bin.exe',
+        pageUrl: 'https://www.oracle.com/pl/java/technologies/downloads/#jdk21-windows',
+        message: 'Mock: pobrano instalator Java 21.'
       };
+      emitState();
+      return state.system.javaInstaller;
+    },
+    async openJavaInstaller() {
+      return undefined;
     },
     async openJavaDownloadPage() {
       return undefined;
@@ -383,6 +526,10 @@ export function getLauncherApi(): LauncherApi {
     onCrash(callback) {
       crashListeners.add(callback);
       return () => crashListeners.delete(callback);
+    },
+    onInstanceRequired(callback) {
+      instanceListeners.add(callback);
+      return () => instanceListeners.delete(callback);
     }
   };
 }

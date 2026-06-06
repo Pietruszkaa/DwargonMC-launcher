@@ -9,6 +9,12 @@ function makePaths(root: string): LauncherPaths {
   return {
     installDir: root,
     appDir: root,
+    globalDataDir: path.join(root, 'launcher-data'),
+    serversFile: path.join(root, 'launcher-data', 'servers.json'),
+    instancesDir: path.join(root, 'instances'),
+    activeInstanceId: 'dwargonmc',
+    activeInstanceDir: root,
+    usingLegacyInstanceDir: true,
     minecraftDir: path.join(root, 'minecraft'),
     launcherDataDir: path.join(root, 'launcher-data'),
     assetsDir: path.join(root, 'assets'),

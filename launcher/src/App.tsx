@@ -4,7 +4,7 @@ import { branding, brandingStyle } from '@/lib/branding';
 import minecraftOptionsSchema from '@/lib/minecraft-options.schema.json';
 import { getLauncherApi } from '@/lib/mockLauncher';
 import { t } from '@/lib/i18n';
-import type { Announcement, CrashInfo, InstalledModrinthProject, LauncherSettings, LauncherState, MinecraftOptionsState, ModrinthAddonUpdate, ModrinthProject, ModrinthProjectType, ModrinthSort } from '@/types/launcher';
+import type { Announcement, CrashInfo, InstalledModrinthProject, LauncherSettings, LauncherState, MinecraftInstanceCheck, MinecraftOptionsState, ModrinthAddonUpdate, ModrinthProject, ModrinthProjectType, ModrinthSort, SyncPlanChange } from '@/types/launcher';
 
 type Popup = 'settings' | 'files' | 'map' | 'logs' | 'modrinth' | null;
 type LogFilter = 'all' | 'launcher' | 'sync' | 'minecraft' | 'error';
@@ -46,6 +46,9 @@ export function App(): JSX.Element {
   const [timeTick, setTimeTick] = useState(() => Date.now());
   const [mapAvailable, setMapAvailable] = useState(false);
   const [activeSettingsCategory, setActiveSettingsCategory] = useState<SettingsCategory>('launcher');
+  const [manualUpdateOpen, setManualUpdateOpen] = useState(false);
+  const [syncPromptDismissed, setSyncPromptDismissed] = useState<string | null>(null);
+  const [instanceCheck, setInstanceCheck] = useState<MinecraftInstanceCheck | null>(null);
 
   useEffect(() => {
     void api.getState().then((next) => {
@@ -58,10 +61,12 @@ export function App(): JSX.Element {
       setNickname((current) => current || next.profile.nickname);
     });
     const offCrash = api.onCrash((nextCrash) => setCrash(nextCrash));
+    const offInstanceRequired = api.onInstanceRequired((check) => setInstanceCheck(check));
 
     return () => {
       offState();
       offCrash();
+      offInstanceRequired();
     };
   }, []);
 
@@ -94,7 +99,7 @@ export function App(): JSX.Element {
   }, [state?.launch.running, state?.profile.lastPlayedAt]);
 
   useEffect(() => {
-    if (!state?.health.ok) {
+    if (!state?.health.ok || !state.settings.backendUrl) {
       setMapAvailable(false);
       return undefined;
     }
@@ -163,6 +168,16 @@ export function App(): JSX.Element {
     await api.runSync();
   }, []);
 
+  const checkUpdates = useCallback(async () => {
+    await api.checkUpdate();
+    setManualUpdateOpen(true);
+    setUpdateDismissed(false);
+  }, []);
+
+  const switchServer = useCallback(async (serverId: string) => {
+    await api.switchServer(serverId);
+  }, []);
+
   const handleWindowAction = useCallback((action: 'minimize' | 'maximize' | 'close') => {
     void api.windowAction(action);
   }, []);
@@ -175,13 +190,16 @@ export function App(): JSX.Element {
     return <div className="boot">{branding.launcherName}</div>;
   }
 
+  const activeServer = state.servers.servers.find((server) => server.id === state.servers.activeServerId) ?? null;
+  const serverName = activeServer?.name ?? branding.serverName;
   const syncPercent =
     state.sync.totalFiles > 0 ? Math.round((state.sync.completedFiles / state.sync.totalFiles) * 100) : 0;
   const isNickValid = /^[A-Za-z0-9_]{3,16}$/.test(nickname);
   const syncLabel = getSyncLabel(state.sync);
   const settingsOpen = popup === 'settings';
-  const showUpdatePrompt = state.update.available && !updateDismissed;
-  const showAccountPrompt = !accountPromptDismissed && state.profile.accountMode === 'offline' && !state.profile.nickname;
+  const showUpdatePrompt = (state.update.available && !updateDismissed) || manualUpdateOpen;
+  const showServerPrompt = state.setup.complete && !activeServer;
+  const showAccountPrompt = !showServerPrompt && !accountPromptDismissed && state.profile.accountMode === 'offline' && !state.profile.nickname;
   const showJavaPrompt =
     !javaPromptDismissed &&
     !state.system.java.ok &&
@@ -190,6 +208,8 @@ export function App(): JSX.Element {
     !showAccountPrompt &&
     !popup &&
     !crash;
+  const syncPromptKey = state.sync.plan ? `${state.settings.backendUrl}:${state.sync.plan.version}:${state.sync.plan.changes.length}` : null;
+  const showSyncPrompt = Boolean(state.sync.phase === 'ready' && state.sync.plan?.hasChanges && syncPromptKey !== syncPromptDismissed);
 
   if (state.setup.required && !state.setup.complete) {
     return <SetupWizard state={state} onComplete={handleCompleteSetup} onWindowAction={handleWindowAction} />;
@@ -226,6 +246,22 @@ export function App(): JSX.Element {
           <button className="top-sync" type="button" onClick={handleSync}>
             Sync
           </button>
+          {state.servers.servers.length > 1 && (
+            <label className="server-switcher">
+              <span>Serwer</span>
+              <select
+                value={state.servers.activeServerId ?? ''}
+                onChange={(event) => void switchServer(event.target.value)}
+                disabled={state.launch.running}
+              >
+                {state.servers.servers.map((server) => (
+                  <option value={server.id} key={server.id}>
+                    {server.name} · {server.minecraft.version}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="top-sync-progress" title={state.sync.message}>
             <span className={state.sync.verified ? 'notice-good' : 'notice-warn'}>{syncLabel}</span>
             <div className="progress-track top-progress-track" aria-label="Postęp synchronizacji">
@@ -234,6 +270,9 @@ export function App(): JSX.Element {
           </div>
         </div>
         <div className="top-bar-right">
+          <button className="top-icon-btn" type="button" onClick={checkUpdates} title="Sprawdź aktualizacje" aria-label="Sprawdź aktualizacje">
+            ↻
+          </button>
           <span className="version-right">v{state.update.currentVersion}</span>
           <div className="window-controls" aria-label="Window controls">
             <button className="win-btn" type="button" onClick={() => handleWindowAction('minimize')} aria-label="Minimalizuj">−</button>
@@ -245,7 +284,7 @@ export function App(): JSX.Element {
 
       <div className="launcher-container">
         <aside className="sidebar">
-          <h1 className="logo">{branding.serverName}</h1>
+          <h1 className="logo">{serverName}</h1>
 
           <nav className="main-menu" aria-label={settingsOpen ? 'Kategorie ustawień' : 'Launcher actions'}>
             {settingsOpen ? (
@@ -345,14 +384,28 @@ export function App(): JSX.Element {
       {popup === 'logs' && <LogsModal logs={state.logs} onClose={() => setPopup(null)} />}
       {popup === 'modrinth' && <ModrinthModal onClose={() => setPopup(null)} />}
       {showUpdatePrompt && (
-        <UpdateModal state={state} onClose={() => setUpdateDismissed(true)} />
+        <UpdateModal
+          state={state}
+          onClose={() => {
+            setUpdateDismissed(true);
+            setManualUpdateOpen(false);
+          }}
+        />
       )}
+      {showSyncPrompt && state.sync.plan && (
+        <SyncPlanModal
+          plan={state.sync.plan}
+          onClose={() => setSyncPromptDismissed(syncPromptKey)}
+        />
+      )}
+      {showServerPrompt && <ServerSetupModal />}
       {showAccountPrompt && (
         <AccountChoiceModal onClose={() => setAccountPromptDismissed(true)} />
       )}
       {showJavaPrompt && (
         <JavaHelpModal state={state} onClose={() => setJavaPromptDismissed(true)} />
       )}
+      {instanceCheck && <InstanceRequiredModal check={instanceCheck} onClose={() => setInstanceCheck(null)} onDownload={() => { setInstanceCheck(null); void api.launchGame({ nickname, forceDownload: true }); }} />}
       {crash && <CrashModal crash={crash} onClose={() => setCrash(null)} />}
     </main>
   );
@@ -496,6 +549,7 @@ function MapPanel({
 function getSyncLabel(sync: LauncherState['sync']): string {
   if (sync.phase === 'downloading') return `Sync ${sync.completedFiles}/${sync.totalFiles}`;
   if (sync.phase === 'checking') return 'Sprawdzanie';
+  if (sync.phase === 'ready') return 'Sync do decyzji';
   if (sync.phase === 'complete') return 'Pliki OK';
   if (sync.phase === 'warning') return 'Sync serwer offline.';
   if (sync.phase === 'error') return 'Sync error';
@@ -602,13 +656,53 @@ function AccountChoiceModal({ onClose }: { onClose: () => void }): JSX.Element {
   );
 }
 
+function ServerSetupModal(): JSX.Element {
+  const [backendUrl, setBackendUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('Wklej adres backendu serwera, np. https://sync.example.com');
+
+  const add = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await api.addServer(backendUrl);
+      setMessage('Serwer dodany.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Nie udało się dodać serwera.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Dodaj serwer" onClose={() => undefined}>
+      <div className="server-setup">
+        <p>{message}</p>
+        <input value={backendUrl} onChange={(event) => setBackendUrl(event.target.value)} placeholder="https://sync.example.com" />
+      </div>
+      <footer className="modal-actions">
+        <button className="play-button compact" type="button" onClick={add} disabled={busy || !backendUrl.trim()}>
+          {busy ? 'Sprawdzanie...' : 'Dodaj serwer'}
+        </button>
+      </footer>
+    </Modal>
+  );
+}
+
 function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(state.system.java.message);
+  const installer = state.system.javaInstaller;
+  const downloading = installer.phase === 'downloading';
+  const installerReady = installer.phase === 'ready' && Boolean(installer.path);
+  const installerProgress = installer.totalBytes
+    ? `${formatBytes(installer.downloadedBytes)} / ${formatBytes(installer.totalBytes)}`
+    : installer.downloadedBytes > 0
+      ? formatBytes(installer.downloadedBytes)
+      : '';
 
   const downloadInstaller = async (): Promise<void> => {
     setBusy(true);
-    setMessage('Pobieranie instalatora Java 21...');
+    setMessage('Pobieranie instalatora Java 21 z Oracle...');
     try {
       const result = await api.downloadJavaInstaller();
       setMessage(result.message);
@@ -617,6 +711,11 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
     } finally {
       setBusy(false);
     }
+  };
+
+  const runInstaller = async (): Promise<void> => {
+    await api.openJavaInstaller();
+    setMessage('Po zakończeniu instalacji kliknij „Sprawdź ponownie”.');
   };
 
   const refresh = async (): Promise<void> => {
@@ -649,9 +748,22 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
     <Modal title="Java 21 zalecana" onClose={onClose}>
       <div className="java-help">
         <p>{message}</p>
+        <div className="java-download-info">
+          <span>Źródło: Oracle JDK 21 Windows x64</span>
+          <code>{installer.url}</code>
+          <div className="progress-track">
+            <span style={{ width: `${installer.progress}%` }} />
+          </div>
+          {(installer.message || installerProgress) && (
+            <small>{installer.message}{installerProgress ? ` · ${installerProgress}` : ''}</small>
+          )}
+        </div>
         <div className="java-help-actions">
           <button type="button" onClick={downloadInstaller} disabled={busy}>
-            Pobierz instalator
+            {downloading ? 'Pobieranie...' : 'Pobierz instalator'}
+          </button>
+          <button type="button" onClick={runInstaller} disabled={!installerReady || busy}>
+            Uruchom instalator
           </button>
           <button type="button" onClick={() => void api.openJavaDownloadPage()} disabled={busy}>
             Strona Oracle
@@ -682,6 +794,8 @@ function SettingsWorkspace({ state, activeCategory }: { state: LauncherState; ac
   const [mcDraft, setMcDraft] = useState<Record<string, string>>({});
   const [mcMessage, setMcMessage] = useState('');
   const [mcGroup, setMcGroup] = useState('video');
+  const [newServerUrl, setNewServerUrl] = useState('');
+  const [serverMessage, setServerMessage] = useState('');
   const copy = t(draft.language);
   const mcCategories = minecraftOptionsSchema.categories as McOptionCategory[];
   const optionCategories = mcCategories.filter((category) => category.id !== 'controls');
@@ -698,6 +812,10 @@ function SettingsWorkspace({ state, activeCategory }: { state: LauncherState; ac
     });
   }, []);
 
+  useEffect(() => {
+    setDraft(state.settings);
+  }, [state.settings]);
+
   const chooseJava = async (): Promise<void> => {
     const selected = await api.chooseJavaPath();
     if (selected) update('javaPath', selected);
@@ -713,6 +831,27 @@ function SettingsWorkspace({ state, activeCategory }: { state: LauncherState; ac
     const saved = await api.saveSettings(draft);
     setDraft(saved);
     setSettingsMessage('Zapisano ustawienia launchera.');
+  };
+
+  const addServer = async (): Promise<void> => {
+    setServerMessage('Sprawdzanie backendu...');
+    try {
+      await api.addServer(newServerUrl);
+      setNewServerUrl('');
+      setServerMessage('Serwer dodany i aktywny.');
+    } catch (error) {
+      setServerMessage(error instanceof Error ? error.message : 'Nie udało się dodać serwera.');
+    }
+  };
+
+  const switchServer = async (serverId: string): Promise<void> => {
+    setServerMessage('Przełączanie serwera...');
+    try {
+      await api.switchServer(serverId);
+      setServerMessage('Serwer przełączony.');
+    } catch (error) {
+      setServerMessage(error instanceof Error ? error.message : 'Nie udało się przełączyć serwera.');
+    }
   };
 
   const saveMcOptions = async (): Promise<void> => {
@@ -789,9 +928,44 @@ function SettingsWorkspace({ state, activeCategory }: { state: LauncherState; ac
             )}
             {accountMessage && <small>{accountMessage}</small>}
           </section>
+          <section className="account-box" aria-label="Servers">
+            <div>
+              <strong>Serwery</strong>
+              <p>Każdy backend ma osobną instancję Minecrafta i własne ustawienia.</p>
+            </div>
+            <div className="server-list">
+              {state.servers.servers.length > 0 ? (
+                state.servers.servers.map((server) => (
+                  <button
+                    className={server.id === state.servers.activeServerId ? 'active' : ''}
+                    type="button"
+                    key={server.id}
+                    onClick={() => void switchServer(server.id)}
+                    disabled={server.id === state.servers.activeServerId || state.launch.running}
+                  >
+                    <strong>{server.name}</strong>
+                    <small>{server.backendUrl}</small>
+                    <small>
+                      MC: {server.minecraft.version} / {server.minecraft.loader}
+                      {server.minecraft.loaderVersion ? ` ${server.minecraft.loaderVersion}` : ''}
+                      {server.minecraft.address ? ` / ${server.minecraft.address}` : ''}
+                    </small>
+                  </button>
+                ))
+              ) : (
+                <small>Brak dodanych serwerów.</small>
+              )}
+            </div>
+            <div className="inline-control">
+              <input value={newServerUrl} onChange={(event) => setNewServerUrl(event.target.value)} placeholder="https://sync.example.com" />
+              <button type="button" onClick={addServer} disabled={!newServerUrl.trim() || state.launch.running}>Dodaj</button>
+            </div>
+            {serverMessage && <small>{serverMessage}</small>}
+          </section>
           <label className="field">
             <span>{copy.backend}</span>
-            <input value={draft.backendUrl} onChange={(event) => update('backendUrl', event.target.value)} />
+            <input value={draft.backendUrl || 'Brak aktywnego serwera'} readOnly />
+            <small>Adres backendu jest ID aktywnej instancji. Dodaj albo przełącz serwer w sekcji wyżej.</small>
           </label>
           <label className="field row-field">
             <input type="checkbox" checked={draft.closeOnLaunch} onChange={(event) => update('closeOnLaunch', event.target.checked)} />
@@ -821,17 +995,12 @@ function SettingsWorkspace({ state, activeCategory }: { state: LauncherState; ac
             </div>
             <div className="java-actions">
               <button type="button" onClick={() => void api.downloadJavaInstaller()}>Pobierz instalator Java 21</button>
+              <button type="button" onClick={() => void api.openJavaInstaller()} disabled={state.system.javaInstaller.phase !== 'ready'}>Uruchom instalator</button>
               <button type="button" onClick={() => void api.openJavaDownloadPage()}>Strona Oracle</button>
               <button type="button" onClick={refreshJava}>Sprawdź ponownie</button>
             </div>
+            {state.system.javaInstaller.message && <small>{state.system.javaInstaller.message}</small>}
             <small>{state.system.java.message}</small>
-          </label>
-          <label className="field">
-            <span>Język / Language</span>
-            <select value={draft.language} onChange={(event) => update('language', event.target.value === 'en' ? 'en' : 'pl')}>
-              <option value="pl">Polski</option>
-              <option value="en">English</option>
-            </select>
           </label>
           <section className="danger-zone" aria-label="Core reinstall">
             <div>
@@ -1295,8 +1464,21 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
 
   useEffect(() => {
     void refreshInstalled();
-    void loadResults(true);
-  }, [projectType, sort]);
+    void api.getModrinthCache().then((cache) => {
+      if (cache?.results.length) {
+        setQuery(cache.query);
+        setProjectType(cache.projectType);
+        setSort(cache.sort);
+        setResults(cache.results);
+        setOffset(cache.results.length);
+        setHasMore(cache.results.length === MODRINTH_PAGE_SIZE);
+        setMessage(`Cache: ${cache.results.length} wynikow dla Minecraft ${cache.gameVersion} / ${cache.loader}.`);
+        return;
+      }
+
+      void loadResults(true);
+    });
+  }, []);
 
   const handleScroll = (event: UIEvent<HTMLDivElement>): void => {
     const target = event.currentTarget;
@@ -1466,36 +1648,181 @@ function findInstalledAddon(project: ModrinthProject, installed: InstalledModrin
   }) ?? null;
 }
 
-function UpdateModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {
-  const notes = state.update.notes.trim();
+function SyncPlanModal({ plan, onClose }: { plan: NonNullable<LauncherState['sync']['plan']>; onClose: () => void }): JSX.Element {
+  const [busy, setBusy] = useState(false);
+  const topChanges = plan.changes.slice(0, 12);
+  const title = plan.highestImpact === 'recommended' ? 'Sync zalecany przed grą' : 'Dostępne pliki opcjonalne';
 
-  const handleDownload = async (): Promise<void> => {
-    await api.openUpdateDownload();
-    onClose();
+  const apply = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await api.applySync();
+      onClose();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <Modal title="Dostępna aktualizacja" onClose={onClose}>
-      <div className="update-panel">
-        <p>
-          Aktualna wersja: <strong>{state.update.currentVersion}</strong>
+    <Modal title={title} onClose={onClose} wide>
+      <div className="sync-plan">
+        <p className={plan.highestImpact === 'recommended' ? 'notice notice-warn' : 'notice'}>
+          {plan.highestImpact === 'recommended'
+            ? 'Manifest zawiera mody albo config. To jest mocno zalecane przed wejściem na serwer, bo pliki mogą być wymagane po obu stronach.'
+            : 'Manifest zawiera tylko pliki opcjonalne, np. tła albo paczki zasobów.'}
         </p>
-        <p>
-          Nowa wersja: <strong>{state.update.latestVersion}</strong>
-        </p>
-        {notes && <pre>{notes.slice(0, 900)}</pre>}
-        {state.update.sha256Url && <small>SHA256 jest dostępne w plikach release.</small>}
+        <div className="sync-plan-summary">
+          <span>Zmiany: <strong>{plan.changes.length}</strong></span>
+          <span>Mocno zalecane: <strong>{plan.recommendedCount}</strong></span>
+          <span>Opcjonalne: <strong>{plan.optionalCount}</strong></span>
+        </div>
+        <div className="sync-plan-list">
+          {topChanges.map((change) => (
+            <span key={`${change.action}:${change.kind}:${change.path}`}>
+              <strong>{syncActionLabel(change)}</strong>
+              <small>{change.path}</small>
+            </span>
+          ))}
+          {plan.changes.length > topChanges.length && <em>+{plan.changes.length - topChanges.length} więcej</em>}
+        </div>
       </div>
       <footer className="modal-actions">
         <button className="secondary-button" type="button" onClick={onClose}>
           Nie teraz
         </button>
-        <button className="play-button compact" type="button" onClick={handleDownload}>
-          Zaktualizuj
+        <button className="play-button compact" type="button" onClick={apply} disabled={busy}>
+          {busy ? 'Synchronizacja...' : 'Pobierz i zweryfikuj'}
         </button>
       </footer>
     </Modal>
   );
+}
+
+function syncActionLabel(change: SyncPlanChange): string {
+  const action = change.action === 'download' ? 'Pobierz' : change.action === 'update' ? 'Aktualizuj' : 'Usuń';
+  const impact = change.impact === 'recommended' ? 'zalecane' : change.impact === 'required' ? 'wymagane' : 'opcjonalne';
+  return `${action} · ${impact}`;
+}
+
+function InstanceRequiredModal({ check, onClose, onDownload }: { check: MinecraftInstanceCheck; onClose: () => void; onDownload: () => void }): JSX.Element {
+  return (
+    <Modal title="Instancja Minecraft nie jest gotowa" onClose={onClose} wide>
+      <div className="sync-plan">
+        <p className="notice notice-warn">{check.message}</p>
+        <p>Brakuje core/runtime plików instancji. To pobieranie nie jest już uruchamiane po cichu przy kliknięciu Graj.</p>
+        <div className="sync-plan-list">
+          {check.missing.slice(0, 14).map((item) => (
+            <span key={item}>
+              <strong>Brakuje</strong>
+              <small>{item}</small>
+            </span>
+          ))}
+          {check.missing.length > 14 && <em>+{check.missing.length - 14} więcej</em>}
+        </div>
+      </div>
+      <footer className="modal-actions">
+        <button className="secondary-button" type="button" onClick={() => void api.reinstallCore()}>
+          Wyczyść core
+        </button>
+        <button className="play-button compact" type="button" onClick={onDownload}>
+          Pobierz instancję Minecraft
+        </button>
+        <button className="secondary-button compact" type="button" onClick={onClose}>
+          Anuluj
+        </button>
+      </footer>
+    </Modal>
+  );
+}
+
+function UpdateModal({ state, onClose }: { state: LauncherState; onClose: () => void }): JSX.Element {
+  const notes = state.update.notes.trim();
+  const download = state.update.download;
+  const hasUpdate = state.update.available;
+  const busy = download.phase === 'downloading' || download.phase === 'verifying';
+  const ready = download.phase === 'ready';
+  const canDownload = Boolean(state.update.downloadUrl);
+  const progressLabel = download.totalBytes
+    ? `${formatBytes(download.downloadedBytes)} / ${formatBytes(download.totalBytes)}`
+    : download.downloadedBytes > 0
+      ? formatBytes(download.downloadedBytes)
+      : '';
+
+  const openRelease = async (): Promise<void> => {
+    await api.openUpdateDownload();
+  };
+
+  const downloadUpdate = async (): Promise<void> => {
+    await api.downloadUpdate();
+  };
+
+  const showDownloadedUpdate = async (): Promise<void> => {
+    await api.showDownloadedUpdate();
+  };
+
+  if (!hasUpdate) {
+    return (
+      <Modal title="Aktualizacje" onClose={onClose}>
+        <div className="update-panel compact">
+          <p>
+            Masz aktualną wersję: <strong>{state.update.currentVersion}</strong>
+          </p>
+          {state.update.error && <div className="notice notice-warn">{state.update.error}</div>}
+        </div>
+        <footer className="modal-actions">
+          <button className="play-button compact" type="button" onClick={onClose}>
+            OK
+          </button>
+        </footer>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title="Dostępna aktualizacja" onClose={onClose}>
+      <div className="update-panel">
+        <p><strong>{state.update.currentVersion}</strong> → <strong>{state.update.latestVersion}</strong></p>
+        {notes && <pre>{notes.slice(0, 900)}</pre>}
+        <div className="update-download-box">
+          <div className="progress-track">
+            <span style={{ width: `${download.progress}%` }} />
+          </div>
+          <small>{download.message || (state.update.sha256Url ? 'SHA256 zostanie sprawdzone po pobraniu.' : 'Ten release nie ma pliku SHA256SUMS.txt.')}</small>
+          {progressLabel && <code>{progressLabel}</code>}
+          {ready && (
+            <p>
+              Zamknij launcher, uruchom pobrany plik <strong>{download.fileName}</strong>, a stary `.exe` możesz usunąć po sprawdzeniu, że nowa wersja działa.
+            </p>
+          )}
+          {download.expectedSha256 && <small>SHA256: {download.expectedSha256}</small>}
+          <small>Jeśli Windows zablokuje plik: Właściwości pliku - Odblokuj.</small>
+        </div>
+      </div>
+      <footer className="modal-actions">
+        <button className="secondary-button" type="button" onClick={onClose}>
+          Nie teraz
+        </button>
+        <button className="secondary-button" type="button" onClick={openRelease}>
+          Otwórz release
+        </button>
+        {ready ? (
+          <button className="play-button compact" type="button" onClick={showDownloadedUpdate}>
+            Pokaż plik
+          </button>
+        ) : (
+          <button className="play-button compact" type="button" onClick={downloadUpdate} disabled={busy || !canDownload}>
+            {busy ? 'Pobieranie...' : canDownload ? 'Pobierz aktualizację' : 'Brak pliku .exe'}
+          </button>
+        )}
+      </footer>
+    </Modal>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function CrashModal({ crash, onClose }: { crash: CrashInfo; onClose: () => void }): JSX.Element {

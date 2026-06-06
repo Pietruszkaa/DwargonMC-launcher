@@ -2,7 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { ensureLauncherDirs, resolveAppDir, resolveInstallDir, type LauncherPaths } from '../../electron/main/paths';
+import { buildLauncherPaths, ensureLauncherDirs, resolveAppDir, resolveInstallDir, type LauncherPaths } from '../../electron/main/paths';
 
 describe('launcher paths', () => {
   it('uses cwd while running in dev mode', () => {
@@ -65,6 +65,12 @@ describe('launcher paths', () => {
     const paths: LauncherPaths = {
       installDir,
       appDir,
+      globalDataDir: path.join(installDir, 'launcher-data'),
+      serversFile: path.join(installDir, 'launcher-data', 'servers.json'),
+      instancesDir: path.join(installDir, 'instances'),
+      activeInstanceId: 'dwargonmc',
+      activeInstanceDir: installDir,
+      usingLegacyInstanceDir: true,
       minecraftDir: path.join(installDir, 'minecraft'),
       launcherDataDir: path.join(installDir, 'launcher-data'),
       assetsDir: path.join(installDir, 'assets'),
@@ -77,5 +83,27 @@ describe('launcher paths', () => {
     await ensureLauncherDirs(paths);
 
     await expect(fs.readFile(path.join(installDir, 'assets', 'backgrounds', '1.png'), 'utf8')).resolves.toBe('image');
+  });
+
+  it('uses an instance folder for new installs without legacy data', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dwargon-instances-'));
+    const paths = buildLauncherPaths(root, root);
+
+    expect(paths.usingLegacyInstanceDir).toBe(false);
+    expect(paths.activeInstanceId).toBe('dwargonmc');
+    expect(paths.activeInstanceDir).toBe(path.join(root, 'instances', 'dwargonmc'));
+    expect(paths.minecraftDir).toBe(path.join(root, 'instances', 'dwargonmc', 'minecraft'));
+    expect(paths.launcherDataDir).toBe(path.join(root, 'instances', 'dwargonmc', 'launcher-data'));
+  });
+
+  it('keeps legacy root folders when existing data is present', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dwargon-legacy-instance-'));
+    await fs.mkdir(path.join(root, 'minecraft'));
+
+    const paths = buildLauncherPaths(root, root);
+
+    expect(paths.usingLegacyInstanceDir).toBe(true);
+    expect(paths.activeInstanceDir).toBe(root);
+    expect(paths.minecraftDir).toBe(path.join(root, 'minecraft'));
   });
 });
