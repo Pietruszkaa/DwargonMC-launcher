@@ -115,6 +115,12 @@ export async function launchGame(
   const customArgs = splitLaunchArgs(settings.jvmArgs);
   const customLaunchArgs = splitLaunchArgs(settings.minecraftArgs);
 
+  if (settings.autoConnect && minecraft.address) {
+    const [host, portStr] = minecraft.address.split(':');
+    customLaunchArgs.push('--server', host);
+    if (portStr) customLaunchArgs.push('--port', portStr);
+  }
+
   if (customArgs.length > 0) options.customArgs = customArgs;
   if (customLaunchArgs.length > 0) options.customLaunchArgs = customLaunchArgs;
 

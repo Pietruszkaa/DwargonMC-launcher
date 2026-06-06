@@ -224,6 +224,7 @@ export type JavaCheckResult = {
 
 export type LaunchRequest = {
   nickname: string;
+  forceDownload?: boolean;
 };
 
 export type CrashInfo = {

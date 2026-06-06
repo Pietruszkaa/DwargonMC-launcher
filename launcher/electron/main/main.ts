@@ -71,6 +71,7 @@ let basePaths: LauncherPaths;
 let state: LauncherState;
 let backgroundProtocolRegistered = false;
 let healthPollTimer: NodeJS.Timeout | null = null;
+let announcementPollTimer: NodeJS.Timeout | null = null;
 let healthPollInFlight = false;
 let playSessionStartedAt: number | null = null;
 let playSessionTickTimer: NodeJS.Timeout | null = null;
@@ -179,6 +180,7 @@ async function createWindow(): Promise<void> {
 
   registerIpc();
   startHealthPolling();
+  startAnnouncementPolling();
   void refreshUpdateStatus();
   void performStartupSync();
 }
@@ -378,7 +380,7 @@ function registerIpc(): void {
     return result;
   });
 
-  ipcMain.handle('launcher:launch-game', async (_event, request: { nickname: string }) => launchWithNickname(request.nickname));
+  ipcMain.handle('launcher:launch-game', async (_event, request: { nickname: string; forceDownload?: boolean }) => launchWithNickname(request.nickname, request.forceDownload));
 
   ipcMain.handle('launcher:list-managed-files', async () => {
     state.managedFiles = await listManagedLocalFiles(paths.minecraftDir);
@@ -465,6 +467,7 @@ async function performStartupSync(): Promise<SyncStatus> {
   state.managedFiles = await listManagedLocalFiles(paths.minecraftDir);
   state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
   state.backgrounds = await listBackgroundUrls(paths);
+  await refreshAnnouncements();
   emitState();
   return state.sync;
 }
@@ -479,6 +482,7 @@ async function applySync(): Promise<SyncStatus> {
   state.managedFiles = await listManagedLocalFiles(paths.minecraftDir);
   state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
   state.backgrounds = await listBackgroundUrls(paths);
+  await refreshAnnouncements();
   emitState();
   return state.sync;
 }
@@ -494,6 +498,19 @@ function stopHealthPolling(): void {
   if (!healthPollTimer) return;
   clearInterval(healthPollTimer);
   healthPollTimer = null;
+}
+
+function startAnnouncementPolling(): void {
+  stopAnnouncementPolling();
+  announcementPollTimer = setInterval(() => {
+    void refreshAnnouncements();
+  }, 3 * 60 * 1000);
+}
+
+function stopAnnouncementPolling(): void {
+  if (!announcementPollTimer) return;
+  clearInterval(announcementPollTimer);
+  announcementPollTimer = null;
 }
 
 async function refreshHealth(): Promise<void> {
@@ -604,19 +621,21 @@ async function resolveAuthorization(nickname: string): Promise<MclcAuthorization
   };
 }
 
-async function launchWithNickname(nickname: string): Promise<LaunchStatus> {
+async function launchWithNickname(nickname: string, forceDownload = false): Promise<LaunchStatus> {
   if (state.launch.running) return state.launch;
 
-  const instanceCheck = await checkMinecraftInstanceReady(paths, activeMinecraft());
-  if (!instanceCheck.ready) {
-    state.launch = {
-      running: false,
-      phase: 'error',
-      message: instanceCheck.message
-    };
-    mainWindow?.webContents.send('launcher:instance-required', instanceCheck);
-    emitState();
-    return state.launch;
+  if (!forceDownload) {
+    const instanceCheck = await checkMinecraftInstanceReady(paths, activeMinecraft());
+    if (!instanceCheck.ready) {
+      state.launch = {
+        running: false,
+        phase: 'error',
+        message: instanceCheck.message
+      };
+      mainWindow?.webContents.send('launcher:instance-required', instanceCheck);
+      emitState();
+      return state.launch;
+    }
   }
 
   let authorization: MclcAuthorization;
@@ -646,32 +665,42 @@ async function launchWithNickname(nickname: string): Promise<LaunchStatus> {
     return state.launch;
   }
 
-  state.launch = await launchGame(
-    paths,
-    state.settings,
-    launchNickname,
-    authorization,
-    {
-      onStatus: (launch) => {
-        state.launch = launch;
-        if (launch.running) {
-          beginPlaySession();
+  try {
+    state.launch = await launchGame(
+      paths,
+      state.settings,
+      launchNickname,
+      authorization,
+      {
+        onStatus: (launch) => {
+          state.launch = launch;
+          if (launch.running) {
+            beginPlaySession();
+          }
+          if (launch.phase === 'closed') {
+            void completePlaySession();
+          }
+          emitState();
+        },
+        onLog: appendLog,
+        onCrash: (exitCode) => {
+          mainWindow?.webContents.send('launcher:crash', {
+            exitCode,
+            lines: state.logs.slice(-CRASH_LOG_LINES)
+          });
         }
-        if (launch.phase === 'closed') {
-          void completePlaySession();
-        }
-        emitState();
       },
-      onLog: appendLog,
-      onCrash: (exitCode) => {
-        mainWindow?.webContents.send('launcher:crash', {
-          exitCode,
-          lines: state.logs.slice(-CRASH_LOG_LINES)
-        });
-      }
-    },
-    activeServer(state.servers)?.minecraft
-  );
+      activeServer(state.servers)?.minecraft
+    );
+  } catch (error) {
+    state.launch = {
+      running: false,
+      phase: 'error',
+      message: error instanceof Error ? error.message : 'Błąd launchera: ' + String(error)
+    };
+    emitState();
+    return state.launch;
+  }
 
   if (state.settings.closeOnLaunch) {
     hideToTray(true);

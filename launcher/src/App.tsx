@@ -405,7 +405,7 @@ export function App(): JSX.Element {
       {showJavaPrompt && (
         <JavaHelpModal state={state} onClose={() => setJavaPromptDismissed(true)} />
       )}
-      {instanceCheck && <InstanceRequiredModal check={instanceCheck} onClose={() => setInstanceCheck(null)} />}
+      {instanceCheck && <InstanceRequiredModal check={instanceCheck} onClose={() => setInstanceCheck(null)} onDownload={() => { setInstanceCheck(null); void api.launchGame({ nickname, forceDownload: true }); }} />}
       {crash && <CrashModal crash={crash} onClose={() => setCrash(null)} />}
     </main>
   );
@@ -1704,7 +1704,7 @@ function syncActionLabel(change: SyncPlanChange): string {
   return `${action} · ${impact}`;
 }
 
-function InstanceRequiredModal({ check, onClose }: { check: MinecraftInstanceCheck; onClose: () => void }): JSX.Element {
+function InstanceRequiredModal({ check, onClose, onDownload }: { check: MinecraftInstanceCheck; onClose: () => void; onDownload: () => void }): JSX.Element {
   return (
     <Modal title="Instancja Minecraft nie jest gotowa" onClose={onClose} wide>
       <div className="sync-plan">
@@ -1724,8 +1724,11 @@ function InstanceRequiredModal({ check, onClose }: { check: MinecraftInstanceChe
         <button className="secondary-button" type="button" onClick={() => void api.reinstallCore()}>
           Wyczyść core
         </button>
-        <button className="play-button compact" type="button" onClick={onClose}>
-          OK
+        <button className="play-button compact" type="button" onClick={onDownload}>
+          Pobierz instancję Minecraft
+        </button>
+        <button className="secondary-button compact" type="button" onClick={onClose}>
+          Anuluj
         </button>
       </footer>
     </Modal>
