@@ -7,7 +7,6 @@ import { BACKGROUND_PROTOCOL, listBackgroundUrls, resolveBackgroundRequest } fro
 import { CRASH_LOG_LINES, LAUNCHER_NAME, MAX_LOG_LINES, MC_VERSION } from './constants';
 import { reinstallCore, type ReinstallCoreResult } from './core';
 import { checkJava, downloadJavaInstaller, idleJavaInstallerStatus, javaDownloadPageUrl, type JavaInstallerResult } from './java';
-import { deleteMicrosoftRefreshToken, getMicrosoftRefreshToken, saveMicrosoftRefreshToken } from './keychain';
 import { checkMinecraftInstanceReady, launchGame, type LaunchStatus } from './game';
 import { readMinecraftOptions, saveMinecraftOptions } from './minecraftOptions';
 import { loginMicrosoft, refreshMicrosoft, type MclcAuthorization } from './microsoftAuth';
@@ -27,6 +26,7 @@ import {
 } from './storage';
 import { offlineUuid } from './validation';
 import { checkForLauncherUpdate, downloadLauncherUpdate, idleUpdateStatus, type UpdateStatus } from './updater';
+import { deleteMicrosoftRefreshToken, getMicrosoftRefreshToken, saveMicrosoftRefreshToken } from './keychain';
 
 type ServerHealth = {
   ok: boolean;
@@ -264,7 +264,8 @@ function registerIpc(): void {
         await deleteMicrosoftRefreshToken(microsoftUuid);
       } catch (error) {
         appendLog(error instanceof Error ? `Nie udało się usunąć tokena Microsoft: ${error.message}` : 'Nie udało się usunąć tokena Microsoft.');
-     }
+        throw error;
+      }
     }
 
     state.profile = await saveProfile(paths, {

@@ -1,52 +1,39 @@
-# Dependencies
 node_modules/
 launcher/node_modules/
-sync-server/node_modules/
 
-# Build outputs
 launcher/dist/
 launcher/dist-electron/
 launcher/release/
-admin-site/dist/
 dist/
 dist-electron/
 release/
 
-# Local launcher runtime data
 launcher/launcher-data/
 launcher/minecraft/
 launcher/instances/
-launcher-data/
-minecraft/
+launcher/logs/
 
-# Backend runtime/sync content managed outside git
-sync-server/manifest.json
-sync-server/server.json
-sync-server/files/*
-sync-server/backgrounds/*
+*.exe
+*.msi
+*.AppImage
+*.dmg
+*.deb
+*.rpm
+*.zip
+*.7z
+*.tar.gz
 
-# Secrets and local overrides
 .env
 .env.*
 !.env.example
-*.local.json
-sync-server/access*.json
 
-# Logs and caches
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.vite/
-.vitest/
-coverage/
+pnpm-debug.log*
 
-# Local editor/OS files
-.idea/
-.vscode/
 .DS_Store
 Thumbs.db
-
-# Local Codex/agent metadata
-.agents/
-.codex/
+.vscode/
+.idea/

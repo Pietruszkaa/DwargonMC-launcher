@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import { DEFAULT_BACKEND_URL } from './constants';
 import { saveMicrosoftRefreshToken } from './keychain';
 import type { LauncherPaths } from './paths';
@@ -86,7 +85,6 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
 }
 
 async function writeJson<T>(file: string, value: T): Promise<T> {
-  await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   return value;
 }
@@ -120,34 +118,36 @@ export async function saveSettings(paths: LauncherPaths, settings: LauncherSetti
 }
 
 export async function readProfile(paths: LauncherPaths): Promise<LauncherProfile> {
+  let profile: LegacyLauncherProfile;
+
   try {
     const raw = await fs.readFile(paths.profileFile, 'utf8');
-    const profile = JSON.parse(raw) as LegacyLauncherProfile;
-
-    const microsoft = normalizeMicrosoftProfile(profile.microsoft);
-    const accountMode = profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline';
-
-    if (accountMode === 'microsoft' && microsoft && hasLegacyRefreshToken(profile.microsoft)) {
-      await saveMicrosoftRefreshToken(microsoft.uuid, String(profile.microsoft.refreshToken));
-
-      const migrated = normalizeProfile({
-        ...profile,
-        accountMode,
-        microsoft
-      });
-
-      await writeJson(paths.profileFile, migrated);
-      return migrated;
-    }
-
-    return normalizeProfile({
-      ...profile,
-      accountMode,
-      microsoft: accountMode === 'microsoft' ? microsoft : null
-    });
+    profile = JSON.parse(raw) as LegacyLauncherProfile;
   } catch {
     return defaultProfile();
   }
+
+  const microsoft = normalizeMicrosoftProfile(profile.microsoft);
+  const accountMode = profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline';
+
+  if (accountMode === 'microsoft' && microsoft && hasLegacyRefreshToken(profile.microsoft)) {
+    await saveMicrosoftRefreshToken(microsoft.uuid, String(profile.microsoft.refreshToken));
+
+    const migrated = normalizeProfile({
+      ...profile,
+      accountMode,
+      microsoft
+    });
+
+    await writeJson(paths.profileFile, migrated);
+    return migrated;
+  }
+
+  return normalizeProfile({
+    ...profile,
+    accountMode,
+    microsoft: accountMode === 'microsoft' ? microsoft : null
+  });
 }
 
 export async function saveProfile(paths: LauncherPaths, profile: LauncherProfile): Promise<LauncherProfile> {
@@ -187,7 +187,7 @@ function hasLegacyRefreshToken(profile: LegacyLauncherProfile['microsoft'] | und
 }
 
 export function normalizeBackendUrl(url: string): string {
-  const trimmed = String(url ?? '').trim();
+  const trimmed = url.trim();
   if (!trimmed) return DEFAULT_BACKEND_URL;
   return trimmed.replace(/\/+$/, '');
 }

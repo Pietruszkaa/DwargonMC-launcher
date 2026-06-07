@@ -79,6 +79,14 @@ export type MicrosoftProfile = {
   expiresAt: number | null;
 };
 
+export type LegacyMicrosoftProfile = MicrosoftProfile & {
+  refreshToken?: unknown;
+};
+
+export type LegacyLauncherProfile = Partial<Omit<LauncherProfile, 'microsoft'>> & {
+  microsoft?: LegacyMicrosoftProfile | null;
+};
+
 export type ServerHealth = {
   ok: boolean;
   serverOnline: boolean;
@@ -237,7 +245,7 @@ export type ReinstallCoreResult = {
 };
 
 export type JavaInstallerResult = {
-  phase: 'idle' | 'downloading' | 'verifying' | 'ready' | 'error';
+  phase: 'idle' | 'downloading' | 'ready' | 'error';
   progress: number;
   downloadedBytes: number;
   totalBytes: number | null;
