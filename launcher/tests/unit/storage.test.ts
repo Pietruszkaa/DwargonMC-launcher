@@ -60,7 +60,6 @@ describe('launcher profile storage', () => {
       microsoft: {
         name: 'PremiumPlayer',
         uuid: 'uuid',
-        refreshToken: 'refresh-token',
         xuid: 'xuid',
         expiresAt: 123
       },

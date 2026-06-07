@@ -255,7 +255,6 @@ export function getLauncherApi(): LauncherApi {
           microsoft: {
             name: 'PremiumPlayer',
             uuid: '00000000000000000000000000000000',
-            refreshToken: 'mock-refresh',
             xuid: null,
             expiresAt: Date.now() + 3600_000
           }

@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { DEFAULT_BACKEND_URL } from './constants';
+import { saveMicrosoftRefreshToken } from './keychain';
 import type { LauncherPaths } from './paths';
 import { clampRam, getRamInfo } from './ram';
 
@@ -18,21 +20,30 @@ export type LauncherSettings = {
   language: Language;
 };
 
+export type MicrosoftProfile = {
+  name: string;
+  uuid: string;
+  xuid: string | null;
+  expiresAt: number | null;
+};
+
 export type LauncherProfile = {
   nickname: string;
   accountMode: 'offline' | 'microsoft';
-  microsoft: {
-    name: string;
-    uuid: string;
-    refreshToken: string;
-    xuid: string | null;
-    expiresAt: number | null;
-  } | null;
+  microsoft: MicrosoftProfile | null;
   lastPlayedAt: string | null;
   lastSessionSeconds: number;
   totalPlaySeconds: number;
   launchCount: number;
   setupComplete: boolean;
+};
+
+type LegacyMicrosoftProfile = MicrosoftProfile & {
+  refreshToken?: unknown;
+};
+
+type LegacyLauncherProfile = Partial<Omit<LauncherProfile, 'microsoft'>> & {
+  microsoft?: LegacyMicrosoftProfile | null;
 };
 
 export function defaultSettings(): LauncherSettings {
@@ -75,6 +86,7 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
 }
 
 async function writeJson<T>(file: string, value: T): Promise<T> {
+  await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   return value;
 }
@@ -110,55 +122,72 @@ export async function saveSettings(paths: LauncherPaths, settings: LauncherSetti
 export async function readProfile(paths: LauncherPaths): Promise<LauncherProfile> {
   try {
     const raw = await fs.readFile(paths.profileFile, 'utf8');
-    const profile = JSON.parse(raw) as Partial<LauncherProfile>;
+    const profile = JSON.parse(raw) as LegacyLauncherProfile;
 
     const microsoft = normalizeMicrosoftProfile(profile.microsoft);
+    const accountMode = profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline';
 
-    return {
-      nickname: profile.nickname ?? '',
-      accountMode: profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline',
-      microsoft: profile.accountMode === 'microsoft' ? microsoft : null,
-      lastPlayedAt: profile.lastPlayedAt ?? null,
-      lastSessionSeconds: Math.max(0, Number(profile.lastSessionSeconds) || 0),
-      totalPlaySeconds: Math.max(0, Number(profile.totalPlaySeconds) || 0),
-      launchCount: Math.max(0, Number(profile.launchCount) || 0),
-      setupComplete: profile.setupComplete ?? true
-    };
+    if (accountMode === 'microsoft' && microsoft && hasLegacyRefreshToken(profile.microsoft)) {
+      await saveMicrosoftRefreshToken(microsoft.uuid, String(profile.microsoft.refreshToken));
+
+      const migrated = normalizeProfile({
+        ...profile,
+        accountMode,
+        microsoft
+      });
+
+      await writeJson(paths.profileFile, migrated);
+      return migrated;
+    }
+
+    return normalizeProfile({
+      ...profile,
+      accountMode,
+      microsoft: accountMode === 'microsoft' ? microsoft : null
+    });
   } catch {
     return defaultProfile();
   }
 }
 
 export async function saveProfile(paths: LauncherPaths, profile: LauncherProfile): Promise<LauncherProfile> {
+  const normalized = normalizeProfile(profile);
+  return writeJson(paths.profileFile, normalized);
+}
+
+function normalizeProfile(profile: LegacyLauncherProfile): LauncherProfile {
   const microsoft = normalizeMicrosoftProfile(profile.microsoft);
   const accountMode = profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline';
 
-  return writeJson(paths.profileFile, {
-    nickname: profile.nickname.trim(),
+  return {
+    nickname: typeof profile.nickname === 'string' ? profile.nickname.trim() : '',
     accountMode,
     microsoft: accountMode === 'microsoft' ? microsoft : null,
-    lastPlayedAt: profile.lastPlayedAt ?? null,
+    lastPlayedAt: typeof profile.lastPlayedAt === 'string' ? profile.lastPlayedAt : null,
     lastSessionSeconds: Math.max(0, Math.round(Number(profile.lastSessionSeconds) || 0)),
     totalPlaySeconds: Math.max(0, Math.round(Number(profile.totalPlaySeconds) || 0)),
     launchCount: Math.max(0, Math.round(Number(profile.launchCount) || 0)),
-    setupComplete: profile.setupComplete
-  });
+    setupComplete: profile.setupComplete ?? true
+  };
 }
 
-function normalizeMicrosoftProfile(profile: LauncherProfile['microsoft'] | undefined): LauncherProfile['microsoft'] {
-  if (!profile?.name || !profile.uuid || !profile.refreshToken) return null;
+function normalizeMicrosoftProfile(profile: LegacyLauncherProfile['microsoft'] | undefined): MicrosoftProfile | null {
+  if (!profile?.name || !profile.uuid) return null;
 
   return {
     name: String(profile.name),
     uuid: String(profile.uuid),
-    refreshToken: String(profile.refreshToken),
     xuid: profile.xuid ? String(profile.xuid) : null,
     expiresAt: typeof profile.expiresAt === 'number' ? profile.expiresAt : null
   };
 }
 
+function hasLegacyRefreshToken(profile: LegacyLauncherProfile['microsoft'] | undefined): profile is LegacyMicrosoftProfile & { refreshToken: string } {
+  return typeof profile?.refreshToken === 'string' && profile.refreshToken.trim().length > 0;
+}
+
 export function normalizeBackendUrl(url: string): string {
-  const trimmed = url.trim();
+  const trimmed = String(url ?? '').trim();
   if (!trimmed) return DEFAULT_BACKEND_URL;
   return trimmed.replace(/\/+$/, '');
 }
