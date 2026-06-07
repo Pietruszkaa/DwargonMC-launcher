@@ -75,7 +75,6 @@ export type ServerRegistry = {
 export type MicrosoftProfile = {
   name: string;
   uuid: string;
-  refreshToken: string;
   xuid: string | null;
   expiresAt: number | null;
 };
@@ -238,7 +237,7 @@ export type ReinstallCoreResult = {
 };
 
 export type JavaInstallerResult = {
-  phase: 'idle' | 'downloading' | 'ready' | 'error';
+  phase: 'idle' | 'downloading' | 'verifying' | 'ready' | 'error';
   progress: number;
   downloadedBytes: number;
   totalBytes: number | null;

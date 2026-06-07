@@ -7,6 +7,7 @@ import { BACKGROUND_PROTOCOL, listBackgroundUrls, resolveBackgroundRequest } fro
 import { CRASH_LOG_LINES, LAUNCHER_NAME, MAX_LOG_LINES, MC_VERSION } from './constants';
 import { reinstallCore, type ReinstallCoreResult } from './core';
 import { checkJava, downloadJavaInstaller, idleJavaInstallerStatus, javaDownloadPageUrl, type JavaInstallerResult } from './java';
+import { deleteMicrosoftRefreshToken, getMicrosoftRefreshToken, saveMicrosoftRefreshToken } from './keychain';
 import { checkMinecraftInstanceReady, launchGame, type LaunchStatus } from './game';
 import { readMinecraftOptions, saveMinecraftOptions } from './minecraftOptions';
 import { loginMicrosoft, refreshMicrosoft, type MclcAuthorization } from './microsoftAuth';
@@ -236,22 +237,42 @@ function registerIpc(): void {
 
   ipcMain.handle('launcher:login-microsoft', async () => {
     const result = await loginMicrosoft({ onLog: appendLog });
+
+    await saveMicrosoftRefreshToken(result.profile.uuid, result.profile.refreshToken);
+
     state.profile = await saveProfile(paths, {
       ...state.profile,
       nickname: result.profile.name,
       accountMode: 'microsoft',
-      microsoft: result.profile
+      microsoft: {
+        name: result.profile.name,
+        uuid: result.profile.uuid,
+        xuid: result.profile.xuid,
+        expiresAt: result.profile.expiresAt
+      }
     });
+
     emitState();
     return state.profile;
   });
 
   ipcMain.handle('launcher:logout-microsoft', async () => {
+    const microsoftUuid = state.profile.microsoft?.uuid ?? null;
+
+    if (microsoftUuid) {
+      try {
+        await deleteMicrosoftRefreshToken(microsoftUuid);
+      } catch (error) {
+        appendLog(error instanceof Error ? `Nie udało się usunąć tokena Microsoft: ${error.message}` : 'Nie udało się usunąć tokena Microsoft.');
+     }
+    }
+
     state.profile = await saveProfile(paths, {
       ...state.profile,
       accountMode: 'offline',
       microsoft: null
     });
+
     emitState();
     return state.profile;
   });
@@ -601,17 +622,34 @@ function appendLog(line: string): void {
 
 async function resolveAuthorization(nickname: string): Promise<MclcAuthorization> {
   if (state.profile.accountMode === 'microsoft') {
-    if (!state.profile.microsoft?.refreshToken) {
+    const microsoft = state.profile.microsoft;
+
+    if (!microsoft?.uuid) {
       throw new Error('Zaloguj konto Microsoft ponownie.');
     }
 
-    const result = await refreshMicrosoft(state.profile.microsoft.refreshToken, { onLog: appendLog });
+    const refreshToken = await getMicrosoftRefreshToken(microsoft.uuid);
+
+    if (!refreshToken) {
+      throw new Error('Zaloguj konto Microsoft ponownie.');
+    }
+
+    const result = await refreshMicrosoft(refreshToken, { onLog: appendLog });
+
+    await saveMicrosoftRefreshToken(result.profile.uuid, result.profile.refreshToken);
+
     state.profile = await saveProfile(paths, {
       ...state.profile,
       nickname: result.profile.name,
-      microsoft: result.profile,
+      microsoft: {
+        name: result.profile.name,
+        uuid: result.profile.uuid,
+        xuid: result.profile.xuid,
+        expiresAt: result.profile.expiresAt
+      },
       accountMode: 'microsoft'
     });
+
     emitState();
     return result.authorization;
   }
