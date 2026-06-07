@@ -21,8 +21,10 @@ import {
   readSettings,
   saveProfile,
   saveSettings,
+  toPublicProfile,
   type LauncherProfile,
-  type LauncherSettings
+  type LauncherSettings,
+  type PublicLauncherProfile
 } from './storage';
 import { offlineUuid } from './validation';
 import { checkForLauncherUpdate, downloadLauncherUpdate, idleUpdateStatus, type UpdateStatus } from './updater';
@@ -39,7 +41,7 @@ type ServerHealth = {
 type LauncherState = {
   setup: SetupState;
   settings: LauncherSettings;
-  profile: LauncherProfile;
+  profile: PublicLauncherProfile;
   servers: ServerRegistry;
   health: ServerHealth;
   sync: SyncStatus;
@@ -63,12 +65,16 @@ type LauncherState = {
   };
 };
 
+type RuntimeState = Omit<LauncherState, 'profile'> & {
+  profile: LauncherProfile;
+};
+
 const HEALTH_POLL_MS = 15_000;
 
 let mainWindow: BrowserWindow | null = null;
 let paths: LauncherPaths;
 let basePaths: LauncherPaths;
-let state: LauncherState;
+let state: RuntimeState;
 let backgroundProtocolRegistered = false;
 let healthPollTimer: NodeJS.Timeout | null = null;
 let announcementPollTimer: NodeJS.Timeout | null = null;
@@ -186,7 +192,7 @@ async function createWindow(): Promise<void> {
 }
 
 function registerIpc(): void {
-  ipcMain.handle('launcher:get-state', () => state);
+  ipcMain.handle('launcher:get-state', () => publicState());
 
   ipcMain.handle('launcher:save-settings', async (_event, settings: LauncherSettings) => {
     state.settings = await saveSettings(paths, settings);
@@ -212,12 +218,12 @@ function registerIpc(): void {
     return state;
   });
 
-  ipcMain.handle('launcher:save-profile', async (_event, profile: LauncherProfile) => {
-    state.profile = await saveProfile(paths, profile);
+  ipcMain.handle('launcher:save-profile', async (_event, profile: PublicLauncherProfile) => {
+    state.profile = await saveProfile(paths, mergePublicProfile(state.profile, profile));
     state.setup.complete = state.profile.setupComplete;
     state.setup.required = app.isPackaged && !state.profile.setupComplete;
     emitState();
-    return state.profile;
+    return publicState().profile;
   });
 
   ipcMain.handle('launcher:complete-setup', async () => {
@@ -231,7 +237,7 @@ function registerIpc(): void {
       required: false
     };
     emitState();
-    return state.profile;
+    return publicState().profile;
   });
 
   ipcMain.handle('launcher:login-microsoft', async () => {
@@ -243,7 +249,7 @@ function registerIpc(): void {
       microsoft: result.profile
     });
     emitState();
-    return state.profile;
+    return publicState().profile;
   });
 
   ipcMain.handle('launcher:logout-microsoft', async () => {
@@ -253,7 +259,7 @@ function registerIpc(): void {
       microsoft: null
     });
     emitState();
-    return state.profile;
+    return publicState().profile;
   });
 
   ipcMain.handle('launcher:run-sync', () => performStartupSync());
@@ -828,8 +834,36 @@ function activeMinecraft(): ServerMinecraftConfig {
   };
 }
 
+function publicState(): LauncherState {
+  return {
+    ...state,
+    profile: toPublicProfile(state.profile)
+  } satisfies LauncherState;
+}
+
+function mergePublicProfile(current: LauncherProfile, next: PublicLauncherProfile): LauncherProfile {
+  if (next.accountMode !== 'microsoft' || !next.microsoft) {
+    return {
+      ...current,
+      ...next,
+      microsoft: null,
+      accountMode: next.accountMode === 'microsoft' ? 'offline' : next.accountMode
+    };
+  }
+
+  return {
+    ...current,
+    ...next,
+    accountMode: 'microsoft',
+    microsoft: {
+      ...next.microsoft,
+      refreshToken: current.microsoft?.refreshToken ?? ''
+    }
+  };
+}
+
 function emitState(): void {
-  mainWindow?.webContents.send('launcher:state', state);
+  mainWindow?.webContents.send('launcher:state', publicState());
 }
 
 function createTray(): void {

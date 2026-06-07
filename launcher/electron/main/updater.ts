@@ -1,5 +1,5 @@
-import { app } from 'electron';
 import crypto from 'node:crypto';
+import { getLauncherVersion } from './electronRuntime';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { GITHUB_RELEASE_REPO } from './constants';
@@ -47,7 +47,7 @@ type GitHubRelease = {
   assets?: GitHubReleaseAsset[];
 };
 
-export function idleUpdateStatus(currentVersion = app.getVersion()): UpdateStatus {
+export function idleUpdateStatus(currentVersion = getLauncherVersion()): UpdateStatus {
   return {
     checking: false,
     available: false,
@@ -78,7 +78,7 @@ export function idleUpdateDownloadStatus(): UpdateDownloadStatus {
   };
 }
 
-export async function checkForLauncherUpdate(currentVersion = app.getVersion()): Promise<UpdateStatus> {
+export async function checkForLauncherUpdate(currentVersion = getLauncherVersion()): Promise<UpdateStatus> {
   const endpoint = `https://api.github.com/repos/${GITHUB_RELEASE_REPO}/releases/latest`;
 
   try {
@@ -127,7 +127,7 @@ export async function downloadLauncherUpdate(
   update: UpdateStatus,
   launcherDataDir: string,
   onStatus: (status: UpdateDownloadStatus) => void,
-  currentVersion = app.getVersion()
+  currentVersion = getLauncherVersion()
 ): Promise<UpdateDownloadStatus> {
   if (!update.downloadUrl) throw new Error('Brak pliku aktualizacji do pobrania.');
 

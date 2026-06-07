@@ -73,6 +73,77 @@ describe('launcher profile storage', () => {
 
     expect(saved.accountMode).toBe('offline');
     expect(saved.microsoft).toBeNull();
+
+    const raw = JSON.parse(await fs.readFile(paths.profileFile, 'utf8'));
+    expect(raw.microsoft).toBeNull();
+    await expect(fs.stat(path.join(paths.launcherDataDir, 'microsoft-token.bin'))).rejects.toThrow();
+  });
+
+  it('stores microsoft refresh token outside profile.json', async () => {
+    const paths = await tempPaths();
+    await fs.mkdir(paths.launcherDataDir, { recursive: true });
+
+    const saved = await saveProfile(paths, {
+      nickname: 'Player',
+      accountMode: 'microsoft',
+      microsoft: {
+        name: 'PremiumPlayer',
+        uuid: 'uuid',
+        refreshToken: 'refresh-token',
+        xuid: 'xuid',
+        expiresAt: 123
+      },
+      lastPlayedAt: null,
+      lastSessionSeconds: 0,
+      totalPlaySeconds: 0,
+      launchCount: 0,
+      setupComplete: true
+    });
+
+    expect(saved.microsoft?.refreshToken).toBe('refresh-token');
+
+    const raw = JSON.parse(await fs.readFile(paths.profileFile, 'utf8'));
+    expect(raw.microsoft).toEqual({
+      name: 'PremiumPlayer',
+      uuid: 'uuid',
+      xuid: 'xuid',
+      expiresAt: 123
+    });
+    expect(raw.microsoft.refreshToken).toBeUndefined();
+
+    const tokenFile = path.join(paths.launcherDataDir, 'microsoft-token.bin');
+    const encrypted = await fs.readFile(tokenFile);
+    expect(encrypted.includes(Buffer.from('refresh-token'))).toBe(false);
+
+    const loaded = await readProfile(paths);
+    expect(loaded.microsoft?.refreshToken).toBe('refresh-token');
+  });
+
+  it('migrates legacy refresh tokens from profile.json into encrypted storage', async () => {
+    const paths = await tempPaths();
+    await fs.mkdir(paths.launcherDataDir, { recursive: true });
+    await fs.writeFile(
+      paths.profileFile,
+      JSON.stringify({
+        nickname: 'Player',
+        accountMode: 'microsoft',
+        microsoft: {
+          name: 'PremiumPlayer',
+          uuid: 'uuid',
+          refreshToken: 'legacy-refresh-token',
+          xuid: 'xuid',
+          expiresAt: 123
+        },
+        setupComplete: true
+      })
+    );
+
+    const loaded = await readProfile(paths);
+    expect(loaded.microsoft?.refreshToken).toBe('legacy-refresh-token');
+
+    const raw = JSON.parse(await fs.readFile(paths.profileFile, 'utf8'));
+    expect(raw.microsoft.refreshToken).toBeUndefined();
+    await expect(fs.stat(path.join(paths.launcherDataDir, 'microsoft-token.bin'))).resolves.toBeDefined();
   });
 });
 

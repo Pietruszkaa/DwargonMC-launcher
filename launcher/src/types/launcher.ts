@@ -75,7 +75,6 @@ export type ServerRegistry = {
 export type MicrosoftProfile = {
   name: string;
   uuid: string;
-  refreshToken: string;
   xuid: string | null;
   expiresAt: number | null;
 };
