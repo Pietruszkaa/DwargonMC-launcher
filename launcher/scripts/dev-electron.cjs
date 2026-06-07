@@ -1,4 +1,4 @@
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
@@ -73,6 +73,16 @@ function startElectron() {
   if (!viteReady || !fs.existsSync(mainFile) || tscHadError) return;
   electronStarted = true;
   clearInterval(fallback);
+
+  const ensureElectron = spawnSync(process.execPath, [path.join(__dirname, 'ensure-electron.cjs')], {
+    cwd: root,
+    stdio: 'inherit'
+  });
+  if (ensureElectron.status !== 0) {
+    tsc.kill();
+    vite?.kill();
+    process.exit(ensureElectron.status ?? 1);
+  }
 
   const child = spawn(process.execPath, [electronBin, '.'], {
     cwd: root,

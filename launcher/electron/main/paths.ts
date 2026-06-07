@@ -1,5 +1,5 @@
-import { app } from 'electron';
 import fsSync from 'node:fs';
+import { getElectronApp } from './electronRuntime';
 import { constants as fsConstants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -26,6 +26,7 @@ const BACKGROUND_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']
 const DEFAULT_INSTANCE_ID = 'dwargonmc';
 
 export function getInstallDir(): string {
+  const app = getElectronApp();
   return resolveInstallDir({
     isPackaged: app.isPackaged,
     portableExecutableDir: process.env.PORTABLE_EXECUTABLE_DIR,
@@ -51,6 +52,7 @@ export function resolveInstallDir({
 }
 
 export function getLauncherPaths(): LauncherPaths {
+  const app = getElectronApp();
   const installDir = getInstallDir();
   const appDir = resolveAppDir({
     isPackaged: app.isPackaged,
