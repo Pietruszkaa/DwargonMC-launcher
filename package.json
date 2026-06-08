@@ -17,5 +17,8 @@
   "workspaces": [
     "launcher",
     "sync-server"
-  ]
+  ],
+  "dependencies": {
+    "form-data": "^4.0.5"
+  }
 }
