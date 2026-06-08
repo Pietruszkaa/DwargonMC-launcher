@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "axios": "^1.7.9",
+    "form-data": "^4.0.5",
     "minecraft-launcher-core": "^3.18.1",
     "msmc": "^5.0.5",
     "react": "^18.3.1",
