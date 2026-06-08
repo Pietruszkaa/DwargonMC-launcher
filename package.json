@@ -20,5 +20,10 @@
   ],
   "dependencies": {
     "form-data": "^4.0.5"
+  },
+  "overrides": {
+    "request": {
+      "form-data": "2.5.5"
+    }
   }
 }
