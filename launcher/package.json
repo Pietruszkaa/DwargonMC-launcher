@@ -39,6 +39,7 @@
   "build": {
     "appId": "pl.dwargon.launcher",
     "productName": "Dwargon Launcher",
+    "beforePack": "scripts/patch-request-form-data.cjs",
     "directories": {
       "output": "release"
     },
