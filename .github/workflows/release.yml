@@ -24,9 +24,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-            node-version: 22
-            cache: npm
-            cache-dependency-path: |
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
             package-lock.json
 
       - name: Install dependencies
@@ -43,30 +43,30 @@ jobs:
         run: node .github/scripts/apply-release-version.mjs
 
 
-        - name: Debug request dependency
-          shell: pwsh
-          run: |
-            Write-Host "Launcher request package:"
-            if (Test-Path "launcher/node_modules/request/package.json") {
-              Get-Content "launcher/node_modules/request/package.json" | Select-String "form-data"
-            } else {
-              Write-Host "launcher/node_modules/request/package.json not found"
-            }
+      - name: Debug request dependency
+        shell: pwsh
+        run: |
+          Write-Host "Launcher request package:"
+          if (Test-Path "launcher/node_modules/request/package.json") {
+            Get-Content "launcher/node_modules/request/package.json" | Select-String "form-data"
+          } else {
+            Write-Host "launcher/node_modules/request/package.json not found"
+          }
 
-            Write-Host "Root request package:"
-            if (Test-Path "node_modules/request/package.json") {
-              Get-Content "node_modules/request/package.json" | Select-String "form-data"
-            } else {
-              Write-Host "node_modules/request/package.json not found"
-            }
+          Write-Host "Root request package:"
+          if (Test-Path "node_modules/request/package.json") {
+            Get-Content "node_modules/request/package.json" | Select-String "form-data"
+          } else {
+            Write-Host "node_modules/request/package.json not found"
+          }
 
-            Write-Host "Nested form-data:"
-            Get-ChildItem -Recurse -Path . -Filter package.json |
-              Where-Object { $_.FullName -like "*request*form-data*package.json" } |
-              ForEach-Object {
-                Write-Host $_.FullName
-                Get-Content $_.FullName | Select-String '"version"'
-              }
+          Write-Host "Nested form-data:"
+          Get-ChildItem -Recurse -Path . -Filter package.json |
+            Where-Object { $_.FullName -like "*request*form-data*package.json" } |
+            ForEach-Object {
+              Write-Host $_.FullName
+              Get-Content $_.FullName | Select-String '"version"'
+            }
 
 
       - name: Build Windows portable
