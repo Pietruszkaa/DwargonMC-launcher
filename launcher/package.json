@@ -8,12 +8,12 @@
     "dev": "vite --host 127.0.0.1 --port 5173",
     "dev:electron": "node scripts/dev-electron.cjs",
     "ensure:electron": "node scripts/ensure-electron.cjs",
-    "postinstall": "node scripts/ensure-electron.cjs",
     "clean:dev-data": "node scripts/clean-dev-data.cjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
     "build": "tsc -p tsconfig.electron.json && tsc --noEmit && vite build",
-    "dist:win": "npm run build && node scripts/patch-request-form-data.cjs && electron-builder --win dir portable"
+    "postinstall": "node scripts/ensure-electron.cjs",
+    "dist:win": "npm run build && node scripts/patch-request-form-data.cjs && electron-builder --win dir portable --publish never"
   },
   "dependencies": {
     "axios": "^1.7.9",
@@ -29,7 +29,7 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^42.3.3",
+    "electron": "42.3.3",
     "electron-builder": "^26.8.1",
     "jsdom": "^25.0.1",
     "typescript": "^5.7.2",
@@ -39,7 +39,6 @@
   "build": {
     "appId": "pl.dwargon.launcher",
     "productName": "Dwargon Launcher",
-    "beforePack": "scripts/patch-request-form-data.cjs",
     "directories": {
       "output": "release"
     },

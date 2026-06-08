@@ -24,33 +24,53 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            launcher/package-lock.json
-            sync-server/package-lock.json
+            node-version: 22
+            cache: npm
+            cache-dependency-path: |
+            package-lock.json
 
-      - name: Install launcher dependencies
-        run: npm ci --prefix launcher
-
-      - name: Install sync-server dependencies
-        run: npm ci --prefix sync-server
+      - name: Install dependencies
+        run: npm ci
 
       - name: Typecheck
-        run: npm run typecheck
-        working-directory: launcher
+        run: npm run launcher:typecheck
 
       - name: Test
-        run: npm test
-        working-directory: launcher
+        run: npm run launcher:test
 
       - name: Apply tag version
         if: startsWith(github.ref, 'refs/tags/v')
         run: node .github/scripts/apply-release-version.mjs
 
+
+        - name: Debug request dependency
+          shell: pwsh
+          run: |
+            Write-Host "Launcher request package:"
+            if (Test-Path "launcher/node_modules/request/package.json") {
+              Get-Content "launcher/node_modules/request/package.json" | Select-String "form-data"
+            } else {
+              Write-Host "launcher/node_modules/request/package.json not found"
+            }
+
+            Write-Host "Root request package:"
+            if (Test-Path "node_modules/request/package.json") {
+              Get-Content "node_modules/request/package.json" | Select-String "form-data"
+            } else {
+              Write-Host "node_modules/request/package.json not found"
+            }
+
+            Write-Host "Nested form-data:"
+            Get-ChildItem -Recurse -Path . -Filter package.json |
+              Where-Object { $_.FullName -like "*request*form-data*package.json" } |
+              ForEach-Object {
+                Write-Host $_.FullName
+                Get-Content $_.FullName | Select-String '"version"'
+              }
+
+
       - name: Build Windows portable
-        run: npm run dist:win
-        working-directory: launcher
+        run: npm run launcher:dist:win
 
       - name: Generate SHA256
         shell: pwsh
