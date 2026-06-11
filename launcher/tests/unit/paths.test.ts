@@ -49,13 +49,14 @@ describe('launcher paths', () => {
     expect(
       resolveAppDir({
         isPackaged: true,
+        appPath: path.join(appDir, 'resources', 'app.asar'),
         executablePath: path.join(appDir, 'DwargonMC Launcher.exe'),
         cwd: path.join(path.sep, 'workspace')
       })
-    ).toBe(appDir);
+    ).toBe(path.join(appDir, 'resources', 'app.asar'));
   });
 
-  it('copies bundled backgrounds into the persistent portable asset folder', async () => {
+  it('keeps bundled backgrounds out of the persistent instance asset folder', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dwargon-paths-'));
     const appDir = path.join(root, 'portable-extract');
     const installDir = path.join(root, 'launcher-folder');
@@ -82,7 +83,7 @@ describe('launcher paths', () => {
 
     await ensureLauncherDirs(paths);
 
-    await expect(fs.readFile(path.join(installDir, 'assets', 'backgrounds', '1.png'), 'utf8')).resolves.toBe('image');
+    await expect(fs.readdir(path.join(installDir, 'assets', 'backgrounds'))).resolves.toEqual([]);
   });
 
   it('uses an instance folder for new installs without legacy data', async () => {

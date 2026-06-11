@@ -6,6 +6,7 @@ const api = {
   switchServer: (serverId: unknown) => ipcRenderer.invoke('launcher:switch-server', serverId),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('launcher:save-settings', settings),
   saveProfile: (profile: unknown) => ipcRenderer.invoke('launcher:save-profile', profile),
+  chooseSetupDirectory: () => ipcRenderer.invoke('launcher:choose-setup-directory'),
   completeSetup: () => ipcRenderer.invoke('launcher:complete-setup'),
   loginMicrosoft: () => ipcRenderer.invoke('launcher:login-microsoft'),
   logoutMicrosoft: () => ipcRenderer.invoke('launcher:logout-microsoft'),

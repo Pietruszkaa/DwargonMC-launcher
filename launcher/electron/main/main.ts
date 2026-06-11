@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, net, protocol, shell, type NativeImage } from 'electron';
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, net, protocol, shell, type NativeImage, type OpenDialogOptions } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -7,6 +7,7 @@ import { BACKGROUND_PROTOCOL, listBackgroundUrls, resolveBackgroundRequest } fro
 import { CRASH_LOG_LINES, LAUNCHER_NAME, MAX_LOG_LINES, MC_VERSION } from './constants';
 import { reinstallCore, type ReinstallCoreResult } from './core';
 import { checkJava, downloadJavaInstaller, idleJavaInstallerStatus, javaDownloadPageUrl, type JavaInstallerResult } from './java';
+import { deleteMicrosoftRefreshToken, getMicrosoftRefreshToken, saveMicrosoftRefreshToken } from './keychain';
 import { checkMinecraftInstanceReady, launchGame, type LaunchStatus } from './game';
 import { readMinecraftOptions, saveMinecraftOptions } from './minecraftOptions';
 import { loginMicrosoft, refreshMicrosoft, type MclcAuthorization } from './microsoftAuth';
@@ -21,10 +22,8 @@ import {
   readSettings,
   saveProfile,
   saveSettings,
-  toPublicProfile,
   type LauncherProfile,
-  type LauncherSettings,
-  type PublicLauncherProfile
+  type LauncherSettings
 } from './storage';
 import { offlineUuid } from './validation';
 import { checkForLauncherUpdate, downloadLauncherUpdate, idleUpdateStatus, type UpdateStatus } from './updater';
@@ -41,7 +40,7 @@ type ServerHealth = {
 type LauncherState = {
   setup: SetupState;
   settings: LauncherSettings;
-  profile: PublicLauncherProfile;
+  profile: LauncherProfile;
   servers: ServerRegistry;
   health: ServerHealth;
   sync: SyncStatus;
@@ -65,8 +64,16 @@ type LauncherState = {
   };
 };
 
-type RuntimeState = Omit<LauncherState, 'profile'> & {
+type RuntimeSnapshot = {
+  paths: LauncherPaths;
+  settings: LauncherSettings;
   profile: LauncherProfile;
+  servers: ServerRegistry;
+  health: ServerHealth;
+  managedFiles: ManagedFile[];
+  playerAddons: PlayerAddonFile[];
+  backgrounds: string[];
+  announcements: AnnouncementsStatus;
 };
 
 const HEALTH_POLL_MS = 15_000;
@@ -74,7 +81,7 @@ const HEALTH_POLL_MS = 15_000;
 let mainWindow: BrowserWindow | null = null;
 let paths: LauncherPaths;
 let basePaths: LauncherPaths;
-let state: RuntimeState;
+let state: LauncherState;
 let backgroundProtocolRegistered = false;
 let healthPollTimer: NodeJS.Timeout | null = null;
 let announcementPollTimer: NodeJS.Timeout | null = null;
@@ -104,37 +111,28 @@ async function createWindow(): Promise<void> {
     portableExecutableFile: process.env.PORTABLE_EXECUTABLE_FILE
   });
   basePaths = setupResolution.paths;
-  const initialServers = await readServerRegistry(basePaths);
-  const selectedServer = activeServer(initialServers);
-  paths = selectedServer ? buildLauncherPaths(basePaths.installDir, basePaths.appDir, selectedServer.instanceId) : basePaths;
-  await ensureLauncherDirs(paths);
+  const runtime = await reinitializeLauncherRuntime(basePaths, await readServerRegistry(basePaths));
+  paths = runtime.paths;
   registerBackgroundProtocol();
-
-  const settings = {
-    ...(await readSettings(paths)),
-    backendUrl: selectedServer?.backendUrl ?? ''
-  };
-  if (selectedServer) await saveSettings(paths, settings);
-  const profile = await readProfile(paths);
   const ram = getRamInfo();
 
   state = {
     setup: {
       ...setupResolution.setup,
-      complete: profile.setupComplete,
-      required: app.isPackaged && !profile.setupComplete
+      complete: runtime.profile.setupComplete,
+      required: app.isPackaged && !runtime.profile.setupComplete
     },
-    settings,
-    profile,
-    servers: initialServers,
-    health: await getHealth(settings.backendUrl),
+    settings: runtime.settings,
+    profile: runtime.profile,
+    servers: runtime.servers,
+    health: runtime.health,
     sync: idleSync(),
     launch: { running: false, phase: 'idle', message: 'Gotowy.' },
     logs: [],
-    managedFiles: await listManagedLocalFiles(paths.minecraftDir),
-    playerAddons: await listPlayerAddonFiles(paths.minecraftDir),
-    backgrounds: await listBackgroundUrls(paths),
-    announcements: await getAnnouncements(paths, settings.backendUrl),
+    managedFiles: runtime.managedFiles,
+    playerAddons: runtime.playerAddons,
+    backgrounds: runtime.backgrounds,
+    announcements: runtime.announcements,
     update: idleUpdateStatus(app.getVersion()),
     session: {
       activeStartedAt: null,
@@ -142,7 +140,7 @@ async function createWindow(): Promise<void> {
     },
     system: {
       ...ram,
-      java: await checkJava(settings.javaPath),
+      java: await checkJava(runtime.settings.javaPath),
       javaInstaller: idleJavaInstallerStatus()
     }
   };
@@ -192,7 +190,7 @@ async function createWindow(): Promise<void> {
 }
 
 function registerIpc(): void {
-  ipcMain.handle('launcher:get-state', () => publicState());
+  ipcMain.handle('launcher:get-state', () => state);
 
   ipcMain.handle('launcher:save-settings', async (_event, settings: LauncherSettings) => {
     state.settings = await saveSettings(paths, settings);
@@ -218,12 +216,40 @@ function registerIpc(): void {
     return state;
   });
 
-  ipcMain.handle('launcher:save-profile', async (_event, profile: PublicLauncherProfile) => {
-    state.profile = await saveProfile(paths, mergePublicProfile(state.profile, profile));
+  ipcMain.handle('launcher:save-profile', async (_event, profile: LauncherProfile) => {
+    state.profile = await saveProfile(paths, profile);
     state.setup.complete = state.profile.setupComplete;
     state.setup.required = app.isPackaged && !state.profile.setupComplete;
     emitState();
-    return publicState().profile;
+    return state.profile;
+  });
+
+  ipcMain.handle('launcher:choose-setup-directory', async () => {
+    const options: OpenDialogOptions = {
+      title: 'Wybierz folder danych launchera',
+      properties: ['openDirectory', 'createDirectory']
+    };
+    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+
+    const selectedDir = result.canceled ? null : result.filePaths[0];
+    if (!selectedDir) return state;
+
+    basePaths = buildLauncherPaths(selectedDir, basePaths.appDir);
+    const runtime = await reinitializeLauncherRuntime(basePaths, await readServerRegistry(basePaths));
+    applyRuntimeSnapshot(runtime);
+    state.setup = {
+      ...state.setup,
+      reason: 'first-run',
+      baseInstallDir: runtime.paths.installDir,
+      activeInstallDir: runtime.paths.installDir,
+      usingNestedDir: false,
+      suggestedDir: null,
+      crowdedEntries: [],
+      complete: state.profile.setupComplete,
+      required: app.isPackaged && !state.profile.setupComplete
+    };
+    emitState();
+    return state;
   });
 
   ipcMain.handle('launcher:complete-setup', async () => {
@@ -237,29 +263,49 @@ function registerIpc(): void {
       required: false
     };
     emitState();
-    return publicState().profile;
+    return state.profile;
   });
 
   ipcMain.handle('launcher:login-microsoft', async () => {
     const result = await loginMicrosoft({ onLog: appendLog });
+
+    await saveMicrosoftRefreshToken(result.profile.uuid, result.profile.refreshToken);
+
     state.profile = await saveProfile(paths, {
       ...state.profile,
       nickname: result.profile.name,
       accountMode: 'microsoft',
-      microsoft: result.profile
+      microsoft: {
+        name: result.profile.name,
+        uuid: result.profile.uuid,
+        xuid: result.profile.xuid,
+        expiresAt: result.profile.expiresAt
+      }
     });
+
     emitState();
-    return publicState().profile;
+    return state.profile;
   });
 
   ipcMain.handle('launcher:logout-microsoft', async () => {
+    const microsoftUuid = state.profile.microsoft?.uuid ?? null;
+
+    if (microsoftUuid) {
+      try {
+        await deleteMicrosoftRefreshToken(microsoftUuid);
+      } catch (error) {
+        appendLog(error instanceof Error ? `Nie udało się usunąć tokena Microsoft: ${error.message}` : 'Nie udało się usunąć tokena Microsoft.');
+      }
+    }
+
     state.profile = await saveProfile(paths, {
       ...state.profile,
       accountMode: 'offline',
       microsoft: null
     });
+
     emitState();
-    return publicState().profile;
+    return state.profile;
   });
 
   ipcMain.handle('launcher:run-sync', () => performStartupSync());
@@ -567,33 +613,65 @@ async function refreshUpdateStatus(): Promise<UpdateStatus> {
 async function switchToServer(registry: ServerRegistry, instanceId: string): Promise<void> {
   if (state.launch.running) throw new Error('Zamknij Minecraft przed zmianą serwera.');
 
-  paths = buildLauncherPaths(basePaths.installDir, basePaths.appDir, instanceId);
-  await ensureLauncherDirs(paths);
-  const server = activeServer(registry);
-  const settings = {
-    ...(await readSettings(paths)),
-    backendUrl: server?.backendUrl ?? ''
-  };
-  state.servers = registry;
-  state.settings = await saveSettings(paths, settings);
-  state.profile = await readProfile(paths);
+  const runtime = await reinitializeLauncherRuntime(basePaths, registry, instanceId);
+  applyRuntimeSnapshot(runtime);
   state.setup = {
     ...state.setup,
-    activeInstallDir: paths.activeInstanceDir,
+    activeInstallDir: runtime.paths.activeInstanceDir,
     suggestedDir: null
   };
-  state.health = await getHealth(state.settings.backendUrl);
   state.sync = idleSync();
-  state.managedFiles = await listManagedLocalFiles(paths.minecraftDir);
-  state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
-  state.backgrounds = await listBackgroundUrls(paths);
-  state.announcements = await getAnnouncements(paths, state.settings.backendUrl);
   state.session = {
     activeStartedAt: null,
     tickAt: new Date().toISOString()
   };
   emitState();
   void performStartupSync();
+}
+
+async function reinitializeLauncherRuntime(
+  nextBasePaths: LauncherPaths,
+  registry: ServerRegistry,
+  instanceId?: string
+): Promise<RuntimeSnapshot> {
+  const selectedServer = instanceId
+    ? registry.servers.find((server) => server.instanceId === instanceId) ?? null
+    : activeServer(registry);
+  const nextPaths = selectedServer
+    ? buildLauncherPaths(nextBasePaths.installDir, nextBasePaths.appDir, selectedServer.instanceId)
+    : nextBasePaths;
+
+  await ensureLauncherDirs(nextPaths);
+
+  const settings = {
+    ...(await readSettings(nextPaths)),
+    backendUrl: selectedServer?.backendUrl ?? ''
+  };
+  const persistedSettings = selectedServer ? await saveSettings(nextPaths, settings) : settings;
+
+  return {
+    paths: nextPaths,
+    settings: persistedSettings,
+    profile: await readProfile(nextPaths),
+    servers: registry,
+    health: await getHealth(persistedSettings.backendUrl),
+    managedFiles: await listManagedLocalFiles(nextPaths.minecraftDir),
+    playerAddons: await listPlayerAddonFiles(nextPaths.minecraftDir),
+    backgrounds: await listBackgroundUrls(nextPaths),
+    announcements: await getAnnouncements(nextPaths, persistedSettings.backendUrl)
+  };
+}
+
+function applyRuntimeSnapshot(runtime: RuntimeSnapshot): void {
+  paths = runtime.paths;
+  state.settings = runtime.settings;
+  state.profile = runtime.profile;
+  state.servers = runtime.servers;
+  state.health = runtime.health;
+  state.managedFiles = runtime.managedFiles;
+  state.playerAddons = runtime.playerAddons;
+  state.backgrounds = runtime.backgrounds;
+  state.announcements = runtime.announcements;
 }
 
 function appendLog(line: string): void {
@@ -607,17 +685,41 @@ function appendLog(line: string): void {
 
 async function resolveAuthorization(nickname: string): Promise<MclcAuthorization> {
   if (state.profile.accountMode === 'microsoft') {
-    if (!state.profile.microsoft?.refreshToken) {
+    const microsoft = state.profile.microsoft;
+
+    if (!microsoft?.uuid) {
       throw new Error('Zaloguj konto Microsoft ponownie.');
     }
 
-    const result = await refreshMicrosoft(state.profile.microsoft.refreshToken, { onLog: appendLog });
+    let refreshToken: string | null;
+
+    try {
+      refreshToken = await getMicrosoftRefreshToken(microsoft.uuid);
+    } catch (error) {
+      appendLog(error instanceof Error ? `Nie można odczytać tokena Microsoft: ${error.message}` : 'Nie można odczytać tokena Microsoft.');
+      throw new Error('Nie można odczytać tokena Microsoft z systemowego magazynu. Zaloguj konto ponownie.');
+    }
+
+    if (!refreshToken) {
+      throw new Error('Zaloguj konto Microsoft ponownie.');
+    }
+
+    const result = await refreshMicrosoft(refreshToken, { onLog: appendLog });
+
+    await saveMicrosoftRefreshToken(result.profile.uuid, result.profile.refreshToken);
+
     state.profile = await saveProfile(paths, {
       ...state.profile,
       nickname: result.profile.name,
-      microsoft: result.profile,
+      microsoft: {
+        name: result.profile.name,
+        uuid: result.profile.uuid,
+        xuid: result.profile.xuid,
+        expiresAt: result.profile.expiresAt
+      },
       accountMode: 'microsoft'
     });
+
     emitState();
     return result.authorization;
   }
@@ -834,36 +936,8 @@ function activeMinecraft(): ServerMinecraftConfig {
   };
 }
 
-function publicState(): LauncherState {
-  return {
-    ...state,
-    profile: toPublicProfile(state.profile)
-  } satisfies LauncherState;
-}
-
-function mergePublicProfile(current: LauncherProfile, next: PublicLauncherProfile): LauncherProfile {
-  if (next.accountMode !== 'microsoft' || !next.microsoft) {
-    return {
-      ...current,
-      ...next,
-      microsoft: null,
-      accountMode: next.accountMode === 'microsoft' ? 'offline' : next.accountMode
-    };
-  }
-
-  return {
-    ...current,
-    ...next,
-    accountMode: 'microsoft',
-    microsoft: {
-      ...next.microsoft,
-      refreshToken: current.microsoft?.refreshToken ?? ''
-    }
-  };
-}
-
 function emitState(): void {
-  mainWindow?.webContents.send('launcher:state', publicState());
+  mainWindow?.webContents.send('launcher:state', state);
 }
 
 function createTray(): void {

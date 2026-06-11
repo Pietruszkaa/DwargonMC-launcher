@@ -13,11 +13,13 @@
     "test": "vitest run",
     "build": "tsc -p tsconfig.electron.json && tsc --noEmit && vite build",
     "postinstall": "node scripts/ensure-electron.cjs",
-    "dist:win": "npm run build && node scripts/patch-request-form-data.cjs && electron-builder --win dir portable --publish never"
+    "dist:win": "npm run build && node scripts/patch-request-form-data.cjs && electron-builder --win dir portable --publish never",
+    "dist:linux": "npm run build && electron-builder --linux dir tar.gz"
   },
   "dependencies": {
     "axios": "^1.7.9",
     "form-data": "^4.0.5",
+    "keytar": "^7.9.0",
     "minecraft-launcher-core": "^3.18.1",
     "msmc": "^5.0.5",
     "react": "^18.3.1",
@@ -45,16 +47,9 @@
     "files": [
       "dist/**",
       "dist-electron/**",
+      "assets/backgrounds/1.png",
+      "assets/icon.ico",
       "package.json"
-    ],
-    "extraFiles": [
-      {
-        "from": "assets",
-        "to": "assets",
-        "filter": [
-          "**/*"
-        ]
-      }
     ],
     "win": {
       "icon": "assets/icon.ico",
@@ -62,6 +57,14 @@
       "target": [
         "dir",
         "portable"
+      ]
+    },
+    "linux": {
+      "category": "Game",
+      "artifactName": "${productName}-${version}-linux.${ext}",
+      "target": [
+        "dir",
+        "tar.gz"
       ]
     }
   },
