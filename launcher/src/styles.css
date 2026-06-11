@@ -1650,6 +1650,7 @@ button:disabled {
 .installed-addons {
   min-height: 0;
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
   gap: 10px;
   max-height: min(620px, 68vh);
   border: 1px solid var(--line);
@@ -1681,14 +1682,16 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .installed-group {
   min-width: 0;
+  min-height: 0;
   display: grid;
   align-content: start;
   gap: 7px;
-  max-height: 100%;
   overflow: auto;
 }
 

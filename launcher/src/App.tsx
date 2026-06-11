@@ -979,18 +979,6 @@ function SettingsWorkspace({
             <input type="checkbox" checked={draft.closeOnLaunch} onChange={(event) => update('closeOnLaunch', event.target.checked)} />
             <span>{copy.closeOnLaunch}</span>
           </label>
-          <label className="field">
-            <span>Zamknięcie okna</span>
-            <select
-              value={draft.windowCloseBehavior}
-              onChange={(event) => update('windowCloseBehavior', event.target.value as LauncherSettings['windowCloseBehavior'])}
-            >
-              <option value="ask">Zapytaj przy pierwszym zamknięciu</option>
-              <option value="tray">Minimalizuj launcher</option>
-              <option value="exit">Zamknij launcher</option>
-            </select>
-            <small>Decyduje co robi przycisk X w prawym górnym rogu. Ten wybór możesz zmienić później.</small>
-          </label>
           <label className="field row-field">
             <input type="checkbox" checked={draft.showLogs} onChange={(event) => update('showLogs', event.target.checked)} />
             <span>{copy.showLogs}</span>
