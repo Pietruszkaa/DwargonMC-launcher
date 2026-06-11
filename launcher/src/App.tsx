@@ -7,8 +7,7 @@ import { t } from '@/lib/i18n';
 import type { Announcement, CrashInfo, InstalledModrinthProject, LauncherSettings, LauncherState, MinecraftInstanceCheck, MinecraftOptionsState, ModrinthAddonUpdate, ModrinthProject, ModrinthProjectType, ModrinthSort, SyncPlanChange } from '@/types/launcher';
 
 type Popup = 'settings' | 'files' | 'map' | 'logs' | 'modrinth' | null;
-type LogFilter = 'all' | 'launcher' | 'sync' | 'minecraft' | 'error';
-type SettingsCategory = 'launcher' | 'arguments' | 'mc-options';
+type SettingsCategory = 'launcher' | 'mc-arguments' | 'mc-options';
 type McOptionEntry = {
   key: string;
   label: string;
@@ -301,15 +300,20 @@ export function App(): JSX.Element {
                 <button className="menu-btn back" type="button" onClick={() => setPopup(null)}>
                   Back
                 </button>
-                <button className={activeSettingsCategory === 'launcher' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('launcher')}>
-                  Launcher
-                </button>
-                <button className={activeSettingsCategory === 'arguments' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('arguments')}>
-                  Argumenty MC
-                </button>
-                <button className={activeSettingsCategory === 'mc-options' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('mc-options')}>
-                  Ustawienia MC
-                </button>
+                {activeSettingsCategory === 'launcher' ? (
+                  <button className="menu-btn active" type="button">
+                    Launcher
+                  </button>
+                ) : (
+                  <>
+                    <button className={activeSettingsCategory === 'mc-options' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('mc-options')}>
+                      Ustawienia MC
+                    </button>
+                    <button className={activeSettingsCategory === 'mc-arguments' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('mc-arguments')}>
+                      Argumenty MC
+                    </button>
+                  </>
+                )}
               </>
             ) : (
               <>
@@ -684,7 +688,7 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
 
   const downloadInstaller = async (): Promise<void> => {
     setBusy(true);
-    setMessage('Pobieranie instalatora Java 21 z Adoptium...');
+    setMessage(`Pobieranie instalatora Java ${state.system.java.requiredMajor} z Adoptium...`);
     try {
       const result = await api.downloadJavaInstaller();
       setMessage(result.message);
@@ -727,11 +731,11 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
   };
 
   return (
-    <Modal title="Java 21 zalecana" onClose={onClose}>
+    <Modal title={`Java ${state.system.java.requiredMajor} zalecana`} onClose={onClose}>
       <div className="java-help">
         <p>{message}</p>
         <div className="java-download-info">
-          <span>Źródło: Eclipse Temurin JDK 21 Windows x64</span>
+          <span>Źródło: Eclipse Temurin JDK {state.system.java.requiredMajor} Windows x64</span>
           <code>{installer.url}</code>
           <div className="progress-track">
             <span style={{ width: `${installer.progress}%` }} />
@@ -758,8 +762,9 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
           </button>
         </div>
         <small>
-          Automatyczny tryb pobiera oficjalny instalator Eclipse Temurin JDK 21 i uruchamia go normalnie. Klikaj w instalatorze
-          Next/Install, a po zakończeniu wróć do launchera i użyj „Sprawdź ponownie”. Launcher nie instaluje Javy po cichu.
+          Automatyczny tryb pobiera oficjalny instalator Eclipse Temurin JDK {state.system.java.requiredMajor} i uruchamia go normalnie.
+          Klikaj w instalatorze Next/Install, a po zakończeniu wróć do launchera i użyj „Sprawdź ponownie”. Launcher nie instaluje
+          Javy po cichu.
         </small>
       </div>
     </Modal>
@@ -974,18 +979,6 @@ function SettingsWorkspace({
             <input type="checkbox" checked={draft.closeOnLaunch} onChange={(event) => update('closeOnLaunch', event.target.checked)} />
             <span>{copy.closeOnLaunch}</span>
           </label>
-          <label className="field">
-            <span>Zamknięcie okna</span>
-            <select
-              value={draft.windowCloseBehavior}
-              onChange={(event) => update('windowCloseBehavior', event.target.value as LauncherSettings['windowCloseBehavior'])}
-            >
-              <option value="ask">Zapytaj przy pierwszym zamknięciu</option>
-              <option value="tray">Schowaj do tray</option>
-              <option value="exit">Zamknij launcher</option>
-            </select>
-            <small>Decyduje co robi przycisk X w prawym górnym rogu. Ten wybór możesz zmienić później.</small>
-          </label>
           <label className="field row-field">
             <input type="checkbox" checked={draft.showLogs} onChange={(event) => update('showLogs', event.target.checked)} />
             <span>{copy.showLogs}</span>
@@ -997,7 +990,7 @@ function SettingsWorkspace({
               <button type="button" onClick={chooseJava}>{copy.choose}</button>
             </div>
             <div className="java-actions">
-              <button type="button" onClick={() => void api.downloadJavaInstaller()}>Pobierz instalator Java 21</button>
+              <button type="button" onClick={() => void api.downloadJavaInstaller()}>Pobierz instalator Java {state.system.java.requiredMajor}</button>
               <button type="button" onClick={() => void api.openJavaInstaller()} disabled={state.system.javaInstaller.phase !== 'ready'}>Uruchom instalator</button>
               <button type="button" onClick={() => void api.openJavaDownloadPage()}>Strona Adoptium</button>
               <button type="button" onClick={refreshJava}>Sprawdź ponownie</button>
@@ -1019,7 +1012,7 @@ function SettingsWorkspace({
         </div>
       )}
 
-      {activeCategory === 'arguments' && (
+      {activeCategory === 'mc-arguments' && (
         <div className="settings-grid settings-section">
           <label className="field">
             <span>{copy.ram}: {draft.ramMb} MB</span>
@@ -1069,7 +1062,7 @@ function SettingsWorkspace({
 }
 
 function settingsCategoryTitle(category: SettingsCategory): string {
-  if (category === 'arguments') return 'Argumenty MC';
+  if (category === 'mc-arguments') return 'Argumenty MC';
   if (category === 'mc-options') return 'Ustawienia MC';
   return 'Launcher';
 }
@@ -1378,25 +1371,12 @@ function MapModal({ backendUrl, onClose }: { backendUrl: string; onClose: () => 
 
 function LogsModal({ logs, onClose }: { logs: string[]; onClose: () => void }): JSX.Element {
   const [autoscroll, setAutoscroll] = useState(true);
-  const [filter, setFilter] = useState<LogFilter>('all');
-  const [copied, setCopied] = useState('');
   const logRef = useRef<HTMLPreElement | null>(null);
-  const visibleLogs = useMemo(() => filterLogs(logs, filter), [filter, logs]);
 
   useEffect(() => {
     if (!autoscroll || !logRef.current) return;
     logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [autoscroll, visibleLogs]);
-
-  const copyLastLines = async (limit: number): Promise<void> => {
-    const lines = visibleLogs.slice(-limit);
-    try {
-      await navigator.clipboard.writeText(lines.join('\n'));
-      setCopied(`${limit}`);
-    } catch {
-      setCopied('');
-    }
-  };
+  }, [autoscroll, logs]);
 
   return (
     <Modal title="Logi" onClose={onClose} wide>
@@ -1405,51 +1385,10 @@ function LogsModal({ logs, onClose }: { logs: string[]; onClose: () => void }): 
           <input type="checkbox" checked={autoscroll} onChange={(event) => setAutoscroll(event.target.checked)} />
           <span>Autoscroll</span>
         </label>
-        <label className="field logs-filter">
-          <span>Filtr</span>
-          <select value={filter} onChange={(event) => setFilter(event.target.value as LogFilter)}>
-            <option value="all">Wszystko</option>
-            <option value="launcher">Launcher</option>
-            <option value="sync">Sync</option>
-            <option value="minecraft">Java / Minecraft</option>
-            <option value="error">Błędy</option>
-          </select>
-        </label>
-        <div className="logs-copy-actions">
-          <button type="button" onClick={() => void copyLastLines(100)}>
-            {copied === '100' ? 'Skopiowano' : 'Kopiuj 100'}
-          </button>
-          <button type="button" onClick={() => void copyLastLines(300)}>
-            {copied === '300' ? 'Skopiowano' : 'Kopiuj 300'}
-          </button>
-        </div>
       </div>
-      <pre className="logs-view" ref={logRef}>{visibleLogs.length ? visibleLogs.join('\n') : 'Brak logów dla tego filtra.'}</pre>
+      <pre className="logs-view" ref={logRef}>{logs.length ? logs.join('\n') : 'Brak logów.'}</pre>
     </Modal>
   );
-}
-
-function filterLogs(logs: string[], filter: LogFilter): string[] {
-  if (filter === 'all') return logs;
-
-  return logs.filter((line) => {
-    if (filter === 'error') return isErrorLog(line);
-    if (filter === 'sync') return isSyncLog(line);
-    if (filter === 'minecraft') return isMinecraftLog(line);
-    return !isSyncLog(line) && !isMinecraftLog(line);
-  });
-}
-
-function isSyncLog(line: string): boolean {
-  return /sync|manifest|sha256|download|pobier|sprawdz|weryfik/i.test(line);
-}
-
-function isMinecraftLog(line: string): boolean {
-  return /minecraft|neoforge|forge|mclc|java|jvm|launch|game|modlauncher|bootstrap/i.test(line);
-}
-
-function isErrorLog(line: string): boolean {
-  return /error|exception|crash|failed|fatal|błąd|blad|warn|warning/i.test(line);
 }
 
 function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
@@ -1463,8 +1402,9 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
   const [hasMore, setHasMore] = useState(true);
   const [installed, setInstalled] = useState<InstalledModrinthProject[]>([]);
   const [view, setView] = useState<'browse' | 'installed'>('browse');
-  const [message, setMessage] = useState('Wyszukuj resourcepacki, shaderpacki i opcjonalne client-side mody dla Minecraft 1.21.1.');
+  const [message, setMessage] = useState('');
   const loadingResultsRef = useRef(false);
+  const initializedRef = useRef(false);
   const userInstalled = installed.filter((item) => !item.managed);
   const serverInstalled = installed.filter((item) => item.managed);
 
@@ -1501,10 +1441,9 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
       setOffset(nextOffset + next.length);
       setHasMore(next.length === MODRINTH_PAGE_SIZE);
 
-      const total = reset ? next.length : results.length + next.length;
-      setMessage(total ? `Wczytano ${total} wynikow.` : 'Brak wynikow dla tych filtrow.');
+      setMessage(next.length ? '' : 'Brak wyników dla tych filtrów.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Nie udalo sie pobrac wynikow Modrinth.');
+      setMessage(error instanceof Error ? error.message : 'Nie udało się pobrać wyników Modrinth.');
     } finally {
       if (reset) {
         setBusy(false);
@@ -1513,11 +1452,15 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
       }
       loadingResultsRef.current = false;
     }
-  }, [busy, hasMore, loadingMore, offset, projectType, query, results.length, sort]);
+  }, [busy, hasMore, loadingMore, offset, projectType, query, sort]);
 
   useEffect(() => {
     void refreshInstalled();
+
+    let cancelled = false;
     void api.getModrinthCache().then((cache) => {
+      if (cancelled) return;
+
       if (cache?.results.length) {
         setQuery(cache.query);
         setProjectType(cache.projectType);
@@ -1525,13 +1468,29 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
         setResults(cache.results);
         setOffset(cache.results.length);
         setHasMore(cache.results.length === MODRINTH_PAGE_SIZE);
-        setMessage(`Cache: ${cache.results.length} wynikow dla Minecraft ${cache.gameVersion} / ${cache.loader}.`);
+        setMessage('');
+        initializedRef.current = true;
         return;
       }
 
+      initializedRef.current = true;
       void loadResults(true);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!initializedRef.current || view !== 'browse') return undefined;
+
+    const timer = window.setTimeout(() => {
+      void loadResults(true);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [projectType, query, sort, view]);
 
   const handleScroll = (event: UIEvent<HTMLDivElement>): void => {
     const target = event.currentTarget;
@@ -1547,7 +1506,7 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
       setMessage(result.message);
       await refreshInstalled();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Nie udalo sie zainstalowac dodatku.');
+      setMessage(error instanceof Error ? error.message : 'Nie udało się zainstalować dodatku.');
     } finally {
       setBusy(false);
     }
@@ -1563,7 +1522,7 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
       setMessage(result.message);
       await refreshInstalled();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Nie udalo sie usunac dodatku.');
+      setMessage(error instanceof Error ? error.message : 'Nie udało się usunąć dodatku.');
     } finally {
       setBusy(false);
     }
@@ -1573,18 +1532,18 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
     <Modal title="Dodatki Modrinth" onClose={onClose} wide>
       <div className="modrinth-panel">
         <div className="modrinth-controls">
+          <label className="field modrinth-search">
+            <span>Szukaj</span>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Sodium, Complementary, Faithful..." />
+          </label>
           <div className="modrinth-tabs" role="tablist" aria-label="Widok Modrinth">
             <button className={view === 'browse' ? 'active' : ''} type="button" onClick={() => setView('browse')}>
               Przeglądaj
             </button>
             <button className={view === 'installed' ? 'active' : ''} type="button" onClick={() => setView('installed')}>
-              Zainstalowane ({installed.length})
+              Zainstalowane
             </button>
           </div>
-          <label className="field">
-            <span>Szukaj</span>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Sodium, Complementary, Faithful..." />
-          </label>
           <label className="field">
             <span>Typ</span>
             <select value={projectType} onChange={(event) => setProjectType(event.target.value as ModrinthProjectType)}>
@@ -1607,7 +1566,7 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
           </button>
         </div>
 
-        <p className="notice notice-warn">{message}</p>
+        {message && <p className="notice notice-warn">{message}</p>}
 
         {view === 'installed' ? (
           <section className="installed-addons">
@@ -1644,48 +1603,8 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
                   </article>
                 );
               })}
-              {loadingMore && <p className="notice notice-warn">Wczytywanie kolejnych wynikow...</p>}
+              {loadingMore && <p className="notice notice-warn">Wczytywanie kolejnych wyników...</p>}
             </div>
-
-            <aside className="modrinth-sidebar">
-              <section className="modrinth-side-card">
-                <h3>Aktywne filtry</h3>
-                <p>Przeglądaj dodatki bez wychodzenia z launchera. Styl i układ są bliżej przeglądarki instancji niż surowego formularza.</p>
-                <div className="modrinth-side-stats">
-                  <span>
-                    <small>Typ</small>
-                    <strong>{projectTypeLabel(projectType)}</strong>
-                  </span>
-                  <span>
-                    <small>Sortowanie</small>
-                    <strong>{sort}</strong>
-                  </span>
-                  <span>
-                    <small>Fraza</small>
-                    <strong>{query.trim() || 'Brak'}</strong>
-                  </span>
-                </div>
-              </section>
-
-              <section className="modrinth-side-card">
-                <h3>Stan biblioteki</h3>
-                <div className="modrinth-side-stats">
-                  <span>
-                    <small>Wyniki</small>
-                    <strong>{results.length}</strong>
-                  </span>
-                  <span>
-                    <small>Twoje dodatki</small>
-                    <strong>{userInstalled.length}</strong>
-                  </span>
-                  <span>
-                    <small>Serwerowe</small>
-                    <strong>{serverInstalled.length}</strong>
-                  </span>
-                </div>
-                <p>{message}</p>
-              </section>
-            </aside>
           </div>
         )}
       </div>

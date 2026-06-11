@@ -6,10 +6,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-const JAVA_MAJOR_VERSION = 21;
-const ADOPTIUM_RELEASES_PAGE_URL = 'https://adoptium.net/temurin/releases/?version=21';
-const ADOPTIUM_API_URL =
-  'https://api.adoptium.net/v3/assets/latest/21/hotspot?architecture=x64&image_type=jdk&os=windows&vendor=eclipse&jvm_impl=hotspot&heap_size=normal';
+const DEFAULT_JAVA_MAJOR_VERSION = 21;
 const ADOPTIUM_API_TIMEOUT_MS = 15_000;
 const JAVA_INSTALLER_DOWNLOAD_TIMEOUT_MS = 180_000;
 
@@ -17,6 +14,7 @@ export type JavaCheckResult = {
   ok: boolean;
   path: string;
   version: string | null;
+  requiredMajor: number;
   message: string;
 };
 
@@ -29,6 +27,11 @@ export type JavaInstallerResult = {
   url: string;
   pageUrl: string;
   message: string;
+};
+
+type JavaRecommendation = {
+  major: number;
+  label: string;
 };
 
 type AdoptiumPackage = {
@@ -58,8 +61,9 @@ type JavaDownloadTarget = {
   expectedSha256: string;
 };
 
-export async function checkJava(javaPath: string): Promise<JavaCheckResult> {
+export async function checkJava(javaPath: string, minecraftVersion = '1.21.1'): Promise<JavaCheckResult> {
   const executable = javaPath.trim() || 'java';
+  const recommendation = recommendedJavaForMinecraft(minecraftVersion);
 
   try {
     const result = await execFileAsync(executable, ['-version']);
@@ -71,16 +75,18 @@ export async function checkJava(javaPath: string): Promise<JavaCheckResult> {
         ok: false,
         path: executable,
         version: null,
+        requiredMajor: recommendation.major,
         message: 'Nie udało się odczytać wersji Java.'
       };
     }
 
-    if (version < JAVA_MAJOR_VERSION) {
+    if (version < recommendation.major) {
       return {
         ok: false,
         path: executable,
         version: String(version),
-        message: `Wykryto starą Java. Do Minecraft 1.21.1 zalecana jest Java ${JAVA_MAJOR_VERSION} lub nowsza.`
+        requiredMajor: recommendation.major,
+        message: `Wykryto zbyt starą Javę. Dla Minecraft ${minecraftVersion} zalecana jest Java ${recommendation.label} lub nowsza.`
       };
     }
 
@@ -88,17 +94,19 @@ export async function checkJava(javaPath: string): Promise<JavaCheckResult> {
       ok: true,
       path: executable,
       version: String(version),
+      requiredMajor: recommendation.major,
       message:
-        version === JAVA_MAJOR_VERSION
-          ? `Java ${JAVA_MAJOR_VERSION} gotowa.`
-          : `Java ${version} wykryta. Zalecana dla Minecraft 1.21.1 jest Java ${JAVA_MAJOR_VERSION}.`
+        version === recommendation.major
+          ? `Java ${recommendation.label} gotowa dla Minecraft ${minecraftVersion}.`
+          : `Java ${version} wykryta. Dla Minecraft ${minecraftVersion} zalecana jest Java ${recommendation.label}.`
     };
   } catch {
     return {
       ok: false,
       path: executable,
       version: null,
-      message: `Nie znaleziono Java. Zainstaluj Java ${JAVA_MAJOR_VERSION} albo wskaż java.exe w ustawieniach.`
+      requiredMajor: recommendation.major,
+      message: `Nie znaleziono Javy. Zainstaluj Java ${recommendation.label} albo wskaż java.exe w ustawieniach.`
     };
   }
 }
@@ -109,23 +117,23 @@ export function parseJavaVersion(output: string): number | null {
   return version ? Number(version) : null;
 }
 
-export function javaDownloadUrl(platform = process.platform): string {
-  return platform === 'win32' ? ADOPTIUM_API_URL : ADOPTIUM_RELEASES_PAGE_URL;
+export function javaDownloadUrl(javaMajor = DEFAULT_JAVA_MAJOR_VERSION, platform = process.platform): string {
+  return platform === 'win32' ? adoptiumApiUrl(javaMajor) : javaDownloadPageUrl(javaMajor);
 }
 
-export function javaDownloadPageUrl(): string {
-  return ADOPTIUM_RELEASES_PAGE_URL;
+export function javaDownloadPageUrl(javaMajor = DEFAULT_JAVA_MAJOR_VERSION): string {
+  return `https://adoptium.net/temurin/releases/?version=${javaMajor}`;
 }
 
-export function idleJavaInstallerStatus(): JavaInstallerResult {
+export function idleJavaInstallerStatus(javaMajor = DEFAULT_JAVA_MAJOR_VERSION): JavaInstallerResult {
   return {
     phase: 'idle',
     progress: 0,
     downloadedBytes: 0,
     totalBytes: null,
     path: null,
-    url: ADOPTIUM_API_URL,
-    pageUrl: ADOPTIUM_RELEASES_PAGE_URL,
+    url: adoptiumApiUrl(javaMajor),
+    pageUrl: javaDownloadPageUrl(javaMajor),
     message: ''
   };
 }
@@ -133,13 +141,14 @@ export function idleJavaInstallerStatus(): JavaInstallerResult {
 export async function downloadJavaInstaller(
   launcherDataDir: string,
   onStatus: (status: JavaInstallerResult) => void,
+  javaMajor = DEFAULT_JAVA_MAJOR_VERSION,
   platform = process.platform
 ): Promise<JavaInstallerResult> {
   if (platform !== 'win32') {
     const result = {
-      ...idleJavaInstallerStatus(),
+      ...idleJavaInstallerStatus(javaMajor),
       phase: 'error' as const,
-      message: `Automatyczne pobieranie Java ${JAVA_MAJOR_VERSION} jest przygotowane dla Windows. Otwórz stronę ręcznie.`
+      message: `Automatyczne pobieranie Java ${javaMajor} jest przygotowane dla Windows. Otwórz stronę ręcznie.`
     };
     onStatus(result);
     return result;
@@ -148,10 +157,10 @@ export async function downloadJavaInstaller(
   let target: JavaDownloadTarget;
 
   try {
-    target = await resolveAdoptiumJavaDownloadTarget();
+    target = await resolveAdoptiumJavaDownloadTarget(javaMajor);
   } catch (error) {
     const failed = {
-      ...idleJavaInstallerStatus(),
+      ...idleJavaInstallerStatus(javaMajor),
       phase: 'error' as const,
       message: error instanceof Error ? error.message : 'Nie udało się pobrać metadanych Java z Adoptium.'
     };
@@ -166,7 +175,7 @@ export async function downloadJavaInstaller(
   await fs.mkdir(installersDir, { recursive: true });
 
   const base = {
-    ...idleJavaInstallerStatus(),
+    ...idleJavaInstallerStatus(javaMajor),
     phase: 'downloading' as const,
     path: destination,
     url: target.url,
@@ -196,7 +205,7 @@ export async function downloadJavaInstaller(
       await fs.rm(tempDestination, { force: true });
 
       const failed = {
-        ...idleJavaInstallerStatus(),
+        ...idleJavaInstallerStatus(javaMajor),
         phase: 'error' as const,
         path: null,
         message: `Suma SHA256 instalatora Java nie zgadza się. Pobrany: ${actualSha256}, oczekiwany: ${target.expectedSha256}.`
@@ -222,7 +231,7 @@ export async function downloadJavaInstaller(
     await fs.rm(tempDestination, { force: true });
 
     const failed = {
-      ...idleJavaInstallerStatus(),
+      ...idleJavaInstallerStatus(javaMajor),
       phase: 'error' as const,
       path: null,
       message: error instanceof Error ? error.message : 'Nie udało się pobrać instalatora Java.'
@@ -233,14 +242,14 @@ export async function downloadJavaInstaller(
   }
 }
 
-async function resolveAdoptiumJavaDownloadTarget(): Promise<JavaDownloadTarget> {
+async function resolveAdoptiumJavaDownloadTarget(javaMajor: number): Promise<JavaDownloadTarget> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ADOPTIUM_API_TIMEOUT_MS);
 
   let response: Response;
 
   try {
-    response = await fetch(ADOPTIUM_API_URL, {
+    response = await fetch(adoptiumApiUrl(javaMajor), {
       signal: controller.signal,
       headers: {
         Accept: 'application/json',
@@ -249,7 +258,7 @@ async function resolveAdoptiumJavaDownloadTarget(): Promise<JavaDownloadTarget> 
     });
   } catch (error) {
     if (isAbortError(error)) {
-      throw new Error('Przekroczono limit czasu pobierania metadanych Java z Adoptium.');
+      throw new Error(`Przekroczono limit czasu pobierania metadanych Java ${javaMajor} z Adoptium.`);
     }
 
     throw error;
@@ -267,13 +276,13 @@ async function resolveAdoptiumJavaDownloadTarget(): Promise<JavaDownloadTarget> 
   const installer = binary?.installer ?? null;
 
   if (!installer?.link || !installer.name || !installer.checksum) {
-    throw new Error('Adoptium API nie zwróciło instalatora Java z SHA256.');
+    throw new Error(`Adoptium API nie zwróciło instalatora Java ${javaMajor} z SHA256.`);
   }
 
   const checksum = normalizeSha256(installer.checksum);
 
   if (!checksum) {
-    throw new Error('Adoptium API zwróciło niepoprawny SHA256 instalatora Java.');
+    throw new Error(`Adoptium API zwróciło niepoprawny SHA256 instalatora Java ${javaMajor}.`);
   }
 
   return {
@@ -364,4 +373,33 @@ function safeInstallerName(fileName: string): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
+}
+
+function adoptiumApiUrl(javaMajor: number): string {
+  return `https://api.adoptium.net/v3/assets/latest/${javaMajor}/hotspot?architecture=x64&image_type=jdk&os=windows&vendor=eclipse&jvm_impl=hotspot&heap_size=normal`;
+}
+
+export function recommendedJavaForMinecraft(minecraftVersion: string): JavaRecommendation {
+  if (compareMinecraftVersions(minecraftVersion, '1.16.5') <= 0) return { major: 8, label: '8' };
+  if (compareMinecraftVersions(minecraftVersion, '1.17') >= 0 && compareMinecraftVersions(minecraftVersion, '1.17.1') <= 0) {
+    return { major: 16, label: '16' };
+  }
+  if (compareMinecraftVersions(minecraftVersion, '1.18') >= 0 && compareMinecraftVersions(minecraftVersion, '1.20.4') <= 0) {
+    return { major: 17, label: '17' };
+  }
+  if (compareMinecraftVersions(minecraftVersion, '26.1') >= 0) return { major: 25, label: '25' };
+  return { major: 21, label: '21' };
+}
+
+function compareMinecraftVersions(left: string, right: string): number {
+  const leftParts = left.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = right.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+
+  return 0;
 }

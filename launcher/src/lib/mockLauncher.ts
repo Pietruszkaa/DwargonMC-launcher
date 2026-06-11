@@ -156,6 +156,7 @@ let state: LauncherState = {
       ok: false,
       path: 'java',
       version: null,
+      requiredMajor: 21,
       message: 'Mock: Java nie została sprawdzona.'
     },
     javaInstaller: {
@@ -430,6 +431,7 @@ export function getLauncherApi(): LauncherApi {
             ok: true,
             path: 'java',
             version: '21',
+            requiredMajor: 21,
             message: 'Mock: Java 21 gotowa.'
           }
         }

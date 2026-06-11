@@ -1,5 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, net, protocol, shell, type NativeImage, type OpenDialogOptions } from 'electron';
-import fs from 'node:fs';
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell, type OpenDialogOptions } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getAnnouncements, type AnnouncementsStatus } from './announcements';
@@ -88,9 +87,7 @@ let announcementPollTimer: NodeJS.Timeout | null = null;
 let healthPollInFlight = false;
 let playSessionStartedAt: number | null = null;
 let playSessionTickTimer: NodeJS.Timeout | null = null;
-let tray: Tray | null = null;
 let isQuitting = false;
-let restoreAfterGameClose = false;
 let closeChoicePending = false;
 
 protocol.registerSchemesAsPrivileged([
@@ -115,6 +112,7 @@ async function createWindow(): Promise<void> {
   paths = runtime.paths;
   registerBackgroundProtocol();
   const ram = getRamInfo();
+  const java = await checkJava(runtime.settings.javaPath, activeMinecraftVersion(runtime.servers));
 
   state = {
     setup: {
@@ -140,8 +138,8 @@ async function createWindow(): Promise<void> {
     },
     system: {
       ...ram,
-      java: await checkJava(runtime.settings.javaPath),
-      javaInstaller: idleJavaInstallerStatus()
+      java,
+      javaInstaller: idleJavaInstallerStatus(java.requiredMajor)
     }
   };
 
@@ -174,8 +172,6 @@ async function createWindow(): Promise<void> {
     event.preventDefault();
     void safeOpenExternal(url);
   });
-  createTray();
-
   if (process.env.VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
@@ -194,7 +190,8 @@ function registerIpc(): void {
 
   ipcMain.handle('launcher:save-settings', async (_event, settings: LauncherSettings) => {
     state.settings = await saveSettings(paths, settings);
-    state.system.java = await checkJava(state.settings.javaPath);
+    state.system.java = await checkJava(state.settings.javaPath, activeMinecraft().version);
+    state.system.javaInstaller = idleJavaInstallerStatus(state.system.java.requiredMajor);
     await refreshHealth();
     await refreshAnnouncements();
     return state.settings;
@@ -237,6 +234,8 @@ function registerIpc(): void {
     basePaths = buildLauncherPaths(selectedDir, basePaths.appDir);
     const runtime = await reinitializeLauncherRuntime(basePaths, await readServerRegistry(basePaths));
     applyRuntimeSnapshot(runtime);
+    state.system.java = await checkJava(state.settings.javaPath, activeMinecraft().version);
+    state.system.javaInstaller = idleJavaInstallerStatus(state.system.java.requiredMajor);
     state.setup = {
       ...state.setup,
       reason: 'first-run',
@@ -388,7 +387,8 @@ function registerIpc(): void {
   });
 
   ipcMain.handle('launcher:refresh-java', async () => {
-    state.system.java = await checkJava(state.settings.javaPath);
+    state.system.java = await checkJava(state.settings.javaPath, activeMinecraft().version);
+    state.system.javaInstaller = idleJavaInstallerStatus(state.system.java.requiredMajor);
     emitState();
     return state.system.java;
   });
@@ -399,7 +399,7 @@ function registerIpc(): void {
     const result = await downloadJavaInstaller(paths.launcherDataDir, (javaInstaller) => {
       state.system = { ...state.system, javaInstaller };
       emitState();
-    });
+    }, state.system.java.requiredMajor);
     appendLog(result.message);
     return result;
   });
@@ -411,11 +411,11 @@ function registerIpc(): void {
       return;
     }
 
-    await safeOpenExternal(javaDownloadPageUrl());
+    await safeOpenExternal(javaDownloadPageUrl(state.system.java.requiredMajor));
   });
 
   ipcMain.handle('launcher:open-java-download-page', async () => {
-    await safeOpenExternal(javaDownloadPageUrl());
+    await safeOpenExternal(javaDownloadPageUrl(state.system.java.requiredMajor));
   });
 
   ipcMain.handle('launcher:reinstall-core', async (): Promise<ReinstallCoreResult> => {
@@ -482,7 +482,7 @@ function registerIpc(): void {
     if (!mainWindow) return;
 
     if (action === 'minimize') {
-      hideToTray(false);
+      mainWindow.minimize();
       return;
     }
 
@@ -615,6 +615,8 @@ async function switchToServer(registry: ServerRegistry, instanceId: string): Pro
 
   const runtime = await reinitializeLauncherRuntime(basePaths, registry, instanceId);
   applyRuntimeSnapshot(runtime);
+  state.system.java = await checkJava(state.settings.javaPath, activeMinecraft().version);
+  state.system.javaInstaller = idleJavaInstallerStatus(state.system.java.requiredMajor);
   state.setup = {
     ...state.setup,
     activeInstallDir: runtime.paths.activeInstanceDir,
@@ -773,7 +775,8 @@ async function launchWithNickname(nickname: string, forceDownload = false): Prom
     nickname: launchNickname,
     setupComplete: state.profile.setupComplete
   });
-  state.system.java = await checkJava(state.settings.javaPath);
+  state.system.java = await checkJava(state.settings.javaPath, activeMinecraft().version);
+  state.system.javaInstaller = idleJavaInstallerStatus(state.system.java.requiredMajor);
 
   if (!state.system.java.ok) {
     state.launch = { running: false, phase: 'error', message: state.system.java.message };
@@ -819,7 +822,7 @@ async function launchWithNickname(nickname: string, forceDownload = false): Prom
   }
 
   if (state.settings.closeOnLaunch) {
-    hideToTray(true);
+    mainWindow?.minimize();
   }
 
   emitState();
@@ -860,11 +863,6 @@ async function completePlaySession(): Promise<void> {
     tickAt: new Date().toISOString()
   };
   emitState();
-
-  if (restoreAfterGameClose) {
-    restoreAfterGameClose = false;
-    showMainWindow();
-  }
 }
 
 function startPlaySessionTicking(): void {
@@ -936,107 +934,19 @@ function activeMinecraft(): ServerMinecraftConfig {
   };
 }
 
+function activeMinecraftVersion(registry: ServerRegistry): string {
+  return activeServer(registry)?.minecraft.version ?? MC_VERSION;
+}
+
 function emitState(): void {
   mainWindow?.webContents.send('launcher:state', state);
-}
-
-function createTray(): void {
-  if (tray) return;
-
-  const icon = loadTrayIcon();
-  if (!icon) {
-    appendLog('Tray wyłączony: nie znaleziono poprawnej ikony w assets/icon.png albo assets/icon.ico.');
-    return;
-  }
-
-  try {
-    tray = new Tray(icon);
-  } catch (error) {
-    tray = null;
-    appendLog(`Tray wyłączony: ${error instanceof Error ? error.message : 'nie udało się utworzyć ikony tray.'}`);
-    return;
-  }
-
-  tray.setToolTip(LAUNCHER_NAME);
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        label: 'Pokaż launcher',
-        click: showMainWindow
-      },
-      {
-        label: 'Start gry',
-        click: () => {
-          void launchFromTray();
-        }
-      },
-      {
-        label: 'Otwórz folder gry',
-        click: () => {
-          void shell.openPath(paths.minecraftDir);
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Wyjdź',
-        click: () => {
-          isQuitting = true;
-          app.quit();
-        }
-      }
-    ])
-  );
-  tray.on('click', showMainWindow);
-}
-
-async function launchFromTray(): Promise<void> {
-  if (state.launch.running) {
-    showMainWindow();
-    return;
-  }
-
-  const nickname = state.profile.microsoft?.name ?? state.profile.nickname;
-  if (!/^[A-Za-z0-9_]{3,16}$/.test(nickname)) {
-    appendLog('Tray: ustaw nick w launcherze przed startem gry.');
-    showMainWindow();
-    return;
-  }
-
-  const launch = await launchWithNickname(nickname);
-  if (launch.phase === 'error') showMainWindow();
-}
-
-function hideToTray(restoreAfterGame: boolean): void {
-  if (!mainWindow) return;
-  if (!tray) {
-    mainWindow.minimize();
-    return;
-  }
-
-  restoreAfterGameClose = restoreAfterGameClose || restoreAfterGame;
-  mainWindow.hide();
-}
-
-function loadTrayIcon(): NativeImage | null {
-  const candidates = [
-    path.join(paths.bundledAssetsDir, 'icon.png'),
-    path.join(paths.bundledAssetsDir, 'icon.ico')
-  ];
-
-  for (const candidate of candidates) {
-    if (!fs.existsSync(candidate)) continue;
-    const image = nativeImage.createFromPath(candidate);
-    if (!image.isEmpty()) return image;
-  }
-
-  return null;
 }
 
 async function handleMainWindowClose(): Promise<void> {
   if (!mainWindow || closeChoicePending) return;
 
   if (state.settings.windowCloseBehavior === 'tray') {
-    hideToTray(false);
+    mainWindow.minimize();
     return;
   }
 
@@ -1050,19 +960,19 @@ async function handleMainWindowClose(): Promise<void> {
   try {
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'question',
-      buttons: ['Schowaj do tray', 'Zamknij launcher', 'Anuluj'],
+      buttons: ['Minimalizuj launcher', 'Zamknij launcher', 'Anuluj'],
       defaultId: 0,
       cancelId: 2,
       noLink: true,
       title: 'Zamykanie launchera',
       message: 'Co zrobić po kliknięciu zamknięcia?',
-      detail: 'Launcher może schować się do tray i działać w tle albo zamknąć się całkowicie. Ten wybór możesz później zmienić w ustawieniach launchera.'
+      detail: 'Launcher może się zminimalizować albo zamknąć całkowicie. Ten wybór możesz później zmienić w ustawieniach launchera.'
     });
 
     if (result.response === 0) {
       state.settings = await saveSettings(paths, { ...state.settings, windowCloseBehavior: 'tray' });
       emitState();
-      hideToTray(false);
+      mainWindow.minimize();
       return;
     }
 

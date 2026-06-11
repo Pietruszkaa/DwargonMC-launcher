@@ -30,6 +30,9 @@ jobs:
       - name: Install launcher dependencies
         run: npm ci --prefix launcher
 
+      - name: Repair Rollup optional dependency on Windows
+        run: npm install --prefix launcher --no-save @rollup/rollup-win32-x64-msvc@4.61.0
+
       - name: Install sync-server dependencies
         run: npm ci --prefix sync-server
 
