@@ -23,7 +23,7 @@ services:
       MAP_ACCESS_CLIENT_SECRET: "${MAP_ACCESS_CLIENT_SECRET:-}"
       MAP_REQUEST_HEADERS: "${MAP_REQUEST_HEADERS:-}"
     volumes:
-      - ./:/data
+      - ${SYNC_SERVER_ROOT:-.}:/data
       - node-modules:/data/node_modules
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -32,6 +32,9 @@ services:
       - -lc
       - |
         set -e
+        test -f package.json
+        test -f package-lock.json
+        test -f server.js
         npm ci --omit=dev
         mkdir -p files backgrounds
         [ -f announcements.json ] || printf '{"items":[]}\n' > announcements.json

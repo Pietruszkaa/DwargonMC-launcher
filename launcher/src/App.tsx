@@ -31,6 +31,7 @@ type McOptionCategory = {
 
 const api = getLauncherApi();
 const MODRINTH_PAGE_SIZE = 20;
+const launcherIconUrl = new URL('../assets/icon.ico', import.meta.url).href;
 
 export function App(): JSX.Element {
   const [state, setState] = useState<LauncherState | null>(null);
@@ -121,6 +122,16 @@ export function App(): JSX.Element {
     };
   }, [state?.health.ok, state?.settings.backendUrl]);
 
+  const openLauncherSettings = useCallback(() => {
+    setActiveSettingsCategory('launcher');
+    setPopup('settings');
+  }, []);
+
+  const openMinecraftSettings = useCallback(() => {
+    setActiveSettingsCategory('mc-options');
+    setPopup('settings');
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
@@ -146,7 +157,7 @@ export function App(): JSX.Element {
       const key = event.key.toLowerCase();
       if (key === ',') {
         event.preventDefault();
-        setPopup('settings');
+        openLauncherSettings();
       } else if (key === 'l') {
         event.preventDefault();
         setPopup('logs');
@@ -158,14 +169,14 @@ export function App(): JSX.Element {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [crash, mapFullscreen, popup]);
+  }, [crash, mapFullscreen, openLauncherSettings, popup]);
 
   const handlePlay = useCallback(async () => {
     await api.launchGame({ nickname });
   }, [nickname]);
 
-  const handleSync = useCallback(async () => {
-    await api.runSync();
+  const handleApplySync = useCallback(async () => {
+    await api.applySync();
   }, []);
 
   const checkUpdates = useCallback(async () => {
@@ -192,10 +203,12 @@ export function App(): JSX.Element {
 
   const activeServer = state.servers.servers.find((server) => server.id === state.servers.activeServerId) ?? null;
   const serverName = activeServer?.name ?? branding.serverName;
+  const serverVersion = activeServer ? activeServer.minecraft.version : 'Brak aktywnego serwera';
   const syncPercent =
     state.sync.totalFiles > 0 ? Math.round((state.sync.completedFiles / state.sync.totalFiles) * 100) : 0;
+  const syncProgressWidth = state.sync.verified || state.sync.phase === 'complete' ? 100 : syncPercent;
+  const showTopProgress = state.sync.phase === 'checking' || state.sync.phase === 'downloading';
   const isNickValid = /^[A-Za-z0-9_]{3,16}$/.test(nickname);
-  const syncLabel = getSyncLabel(state.sync);
   const settingsOpen = popup === 'settings';
   const showUpdatePrompt = (state.update.available && !updateDismissed) || manualUpdateOpen;
   const showServerPrompt = state.setup.complete && !activeServer;
@@ -216,7 +229,7 @@ export function App(): JSX.Element {
   }
 
   return (
-    <main className="shell" style={brandingStyle as CSSProperties}>
+    <main className={state.servers.servers.length > 1 ? 'shell shell-with-server-rail' : 'shell'} style={brandingStyle as CSSProperties}>
       <div className="background-layer" aria-hidden="true">
         {state.backgrounds.map((background, index) => (
           <span
@@ -228,50 +241,20 @@ export function App(): JSX.Element {
       </div>
 
       <div className="top-bar">
+        <img className="top-launcher-icon" src={launcherIconUrl} alt="" aria-hidden="true" />
         <div className="status-left">
+          <span className={`server-state ${state.health.ok ? 'server-state-online' : 'server-state-offline'}`}>
+            <span aria-hidden="true" />
+            Backend {state.health.ok ? 'Online' : 'Offline'}
+          </span>
           <span className={`server-state ${state.health.serverOnline ? 'server-state-online' : 'server-state-offline'}`}>
             <span aria-hidden="true" />
-            {state.health.serverOnline ? 'Online' : 'Offline'}
+            Serwer {state.health.serverOnline ? 'Online' : 'Offline'}
           </span>
-          <span className="status-divider">|</span>
-          <label className="top-nick">
-            <span>{state.profile.accountMode === 'microsoft' ? 'Microsoft:' : 'Nick:'}</span>
-            <input
-              value={nickname}
-              onChange={(event) => setNickname(event.target.value)}
-              placeholder="Wpisz nick..."
-              disabled={state.profile.accountMode === 'microsoft'}
-            />
-          </label>
-          <button className="top-sync" type="button" onClick={handleSync}>
-            Sync
-          </button>
-          {state.servers.servers.length > 1 && (
-            <label className="server-switcher">
-              <span>Serwer</span>
-              <select
-                value={state.servers.activeServerId ?? ''}
-                onChange={(event) => void switchServer(event.target.value)}
-                disabled={state.launch.running}
-              >
-                {state.servers.servers.map((server) => (
-                  <option value={server.id} key={server.id}>
-                    {server.name} · {server.minecraft.version}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <div className="top-sync-progress" title={state.sync.message}>
-            <span className={state.sync.verified ? 'notice-good' : 'notice-warn'}>{syncLabel}</span>
-            <div className="progress-track top-progress-track" aria-label="Postęp synchronizacji">
-              <span style={{ width: `${syncPercent}%` }} />
-            </div>
-          </div>
         </div>
         <div className="top-bar-right">
-          <button className="top-icon-btn" type="button" onClick={checkUpdates} title="Sprawdź aktualizacje" aria-label="Sprawdź aktualizacje">
-            ↻
+          <button className="top-icon-btn" type="button" onClick={openLauncherSettings} title="Ustawienia launchera" aria-label="Ustawienia launchera">
+            ⚙
           </button>
           <span className="version-right">v{state.update.currentVersion}</span>
           <div className="window-controls" aria-label="Window controls">
@@ -280,11 +263,37 @@ export function App(): JSX.Element {
             <button className="win-btn close" type="button" onClick={() => handleWindowAction('close')} aria-label="Zamknij">×</button>
           </div>
         </div>
+        {showTopProgress && (
+          <div className="top-progress-shell" aria-label="Postęp synchronizacji" title={state.sync.message}>
+            <span style={{ width: `${syncProgressWidth}%` }} />
+          </div>
+        )}
       </div>
 
       <div className="launcher-container">
+        {state.servers.servers.length > 1 && (
+          <aside className="server-rail" aria-label="Wybór serwera">
+            {state.servers.servers.map((server) => (
+              <button
+                className={server.id === state.servers.activeServerId ? 'server-rail-btn active' : 'server-rail-btn'}
+                type="button"
+                key={server.id}
+                onClick={() => void switchServer(server.id)}
+                disabled={server.id === state.servers.activeServerId || state.launch.running}
+                title={`${server.name} · ${server.minecraft.version}`}
+              >
+                <strong>{server.name.slice(0, 2).toUpperCase()}</strong>
+                <small>{server.minecraft.version}</small>
+              </button>
+            ))}
+          </aside>
+        )}
+
         <aside className="sidebar">
-          <h1 className="logo">{serverName}</h1>
+          <div className="logo-block">
+            <h1 className="logo">{serverName}</h1>
+            <p className="logo-meta">{serverVersion}</p>
+          </div>
 
           <nav className="main-menu" aria-label={settingsOpen ? 'Kategorie ustawień' : 'Launcher actions'}>
             {settingsOpen ? (
@@ -304,11 +313,25 @@ export function App(): JSX.Element {
               </>
             ) : (
               <>
-                <button className="menu-btn active" type="button" disabled={!isNickValid || state.launch.running} onClick={handlePlay}>
-                  {copy.play}
-                </button>
-                <button className="menu-btn" type="button" onClick={() => setPopup('settings')}>
-                  {copy.settings}
+                <div className={state.sync.plan?.hasChanges ? 'play-sync-row' : 'play-sync-row play-sync-row-single'}>
+                  <button className="menu-btn active" type="button" disabled={!isNickValid || state.launch.running} onClick={handlePlay}>
+                    {copy.play}
+                  </button>
+                  {state.sync.plan?.hasChanges && (
+                    <button
+                      className="sync-icon-btn"
+                      type="button"
+                      onClick={handleApplySync}
+                      disabled={state.sync.phase === 'checking' || state.sync.phase === 'downloading'}
+                      title="Pobierz aktualizacje manifestu"
+                      aria-label="Pobierz aktualizacje manifestu"
+                    >
+                      ↻
+                    </button>
+                  )}
+                </div>
+                <button className="menu-btn" type="button" onClick={openMinecraftSettings}>
+                  Ustawienia MC
                 </button>
                 <button className="menu-btn" type="button" onClick={() => setPopup('logs')}>
                   {copy.logs}
@@ -320,7 +343,15 @@ export function App(): JSX.Element {
             )}
             <div className="spacer" />
             <div className="sidebar-status">
-              <PreflightPanel state={state} />
+              <label className="sidebar-nick">
+                <span>{state.profile.accountMode === 'microsoft' ? 'Microsoft' : 'Nick'}</span>
+                <input
+                  value={nickname}
+                  onChange={(event) => setNickname(event.target.value)}
+                  placeholder="Wpisz nick..."
+                  disabled={state.profile.accountMode === 'microsoft'}
+                />
+              </label>
               <div className="sidebar-stats">
                 <span>Ostatnia sesja</span>
                 <strong>{formatLastSessionClose(state.profile.lastPlayedAt, timeTick)}</strong>
@@ -354,7 +385,7 @@ export function App(): JSX.Element {
           </aside>
 
           {settingsOpen ? (
-            <SettingsWorkspace state={state} activeCategory={activeSettingsCategory} />
+            <SettingsWorkspace state={state} activeCategory={activeSettingsCategory} onCheckUpdates={checkUpdates} />
           ) : (
             <AnnouncementsPanel items={state.announcements.items} cached={state.announcements.cached} error={state.announcements.error} />
           )}
@@ -420,7 +451,8 @@ function AnnouncementsPanel({
   cached: boolean;
   error: string | null;
 }): JSX.Element | null {
-  if (!items.length && !error) return null;
+  if (!items.length) return null;
+  if (error && /^HTTP \d+$/i.test(error.trim())) return null;
 
   return (
     <section className="announcements-panel">
@@ -428,23 +460,19 @@ function AnnouncementsPanel({
         <h2>Komunikaty</h2>
         {cached && <span>cache</span>}
       </header>
-      {items.length ? (
-        <div className="announcements-list">
-          {items.slice(0, 3).map((item) => (
-            <article className={`announcement announcement-${item.level}`} key={item.id}>
-              <strong>{item.title}</strong>
-              <p>{item.body}</p>
-              {item.link && (
-                <button type="button" onClick={() => window.open(item.link!, '_blank', 'noopener,noreferrer')}>
-                  Otwórz
-                </button>
-              )}
-            </article>
-          ))}
-        </div>
-      ) : (
-        <p className="muted">{error}</p>
-      )}
+      <div className="announcements-list">
+        {items.slice(0, 3).map((item) => (
+          <article className={`announcement announcement-${item.level}`} key={item.id}>
+            <strong>{item.title}</strong>
+            <p>{item.body}</p>
+            {item.link && (
+              <button type="button" onClick={() => window.open(item.link!, '_blank', 'noopener,noreferrer')}>
+                Otwórz
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
     </section>
   );
 }
@@ -459,7 +487,17 @@ function SetupWizard({
   onWindowAction: (action: 'minimize' | 'maximize' | 'close') => void;
 }): JSX.Element {
   const [busy, setBusy] = useState(false);
-  const crowdedPreview = state.setup.crowdedEntries.slice(0, 6);
+
+  const chooseDirectory = async (): Promise<void> => {
+    if (busy) return;
+
+    setBusy(true);
+    try {
+      await api.chooseSetupDirectory();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const finish = async (): Promise<void> => {
     setBusy(true);
@@ -482,41 +520,38 @@ function SetupWizard({
         <h1>{branding.launcherName}</h1>
         {state.setup.reason === 'crowded-folder' ? (
           <p>
-            Launcher wykryl, ze plik `.exe` lezy w folderze z innymi plikami. Dane gry zostana utworzone w osobnym
-            folderze instancji, zeby nie zrobic balaganu obok launchera.
+            Launcher utworzy folder <strong>Dwargon Launcher</strong> i będzie trzymał w nim Minecrafta, ustawienia,
+            logi oraz pliki serwerów. Dzięki temu folder, z którego uruchomiono plik .exe, zostanie czysty.
           </p>
         ) : (
-          <p>Launcher przygotuje lokalna instancje Minecrafta, ustawienia i foldery robocze.</p>
+          <p>
+            Launcher przygotuje folder danych z Minecraftem, ustawieniami, logami i plikami serwerów. Możesz użyć
+            proponowanej lokalizacji albo wskazać własny folder.
+          </p>
         )}
 
         <div className="setup-paths">
           <div>
-            <span>Folder bazowy</span>
+            <span>Folder uruchomienia</span>
             <code>{state.setup.baseInstallDir}</code>
           </div>
           <div>
-            <span>Folder instancji</span>
+            <span>Folder danych launchera</span>
             <code>{state.setup.activeInstallDir}</code>
           </div>
         </div>
 
-        {crowdedPreview.length > 0 && (
-          <div className="setup-detected">
-            <span>Wykryte pliki/foldery obok launchera</span>
-            <div>
-              {crowdedPreview.map((entry) => (
-                <code key={entry}>{entry}</code>
-              ))}
-              {state.setup.crowdedEntries.length > crowdedPreview.length && (
-                <code>+{state.setup.crowdedEntries.length - crowdedPreview.length} wiecej</code>
-              )}
-            </div>
-          </div>
-        )}
+        <p className="setup-note">
+          Plik .exe możesz później przenieść ręcznie do wybranego folderu, jeśli chcesz mieć launcher i dane w jednym
+          miejscu. Launcher nie przenosi sam siebie podczas pracy.
+        </p>
 
         <footer className="setup-actions">
+          <button className="secondary-button" type="button" onClick={chooseDirectory} disabled={busy}>
+            Wybierz inny folder
+          </button>
           <button className="play-button compact" type="button" onClick={finish} disabled={busy}>
-            {busy ? 'Zapisywanie...' : 'Uzyj tego folderu'}
+            {busy ? 'Zapisywanie...' : 'Użyj proponowanego folderu'}
           </button>
         </footer>
       </section>
@@ -542,59 +577,6 @@ function MapPanel({
         </button>
       </header>
       <iframe title={`Mapa ${branding.serverName}`} src={`${backendUrl}/map/`} />
-    </section>
-  );
-}
-
-function getSyncLabel(sync: LauncherState['sync']): string {
-  if (sync.phase === 'downloading') return `Sync ${sync.completedFiles}/${sync.totalFiles}`;
-  if (sync.phase === 'checking') return 'Sprawdzanie';
-  if (sync.phase === 'ready') return 'Sync do decyzji';
-  if (sync.phase === 'complete') return 'Pliki OK';
-  if (sync.phase === 'warning') return 'Sync serwer offline.';
-  if (sync.phase === 'error') return 'Sync error';
-  return 'Sync gotowy';
-}
-
-function PreflightPanel({ state }: { state: LauncherState }): JSX.Element {
-  const javaVersion = Number(state.system.java.version);
-  const javaKind = !state.system.java.ok ? 'bad' : javaVersion === 21 ? 'good' : 'warn';
-  const javaValue = !state.system.java.ok
-    ? 'Problem'
-    : javaVersion === 21
-      ? 'OK 21'
-      : `Ryzyko ${state.system.java.version ?? ''}`.trim();
-  const items = [
-    {
-      label: 'Java',
-      value: javaValue,
-      kind: javaKind
-    },
-    {
-      label: 'RAM',
-      value: `${state.settings.ramMb} MB`,
-      kind: state.settings.ramMb <= state.system.maxRamMb ? 'good' : 'bad'
-    },
-    {
-      label: 'Sync',
-      value: state.sync.verified ? 'OK' : state.sync.phase === 'warning' ? 'Ostrzeżenie' : state.sync.phase,
-      kind: state.sync.verified ? 'good' : 'warn'
-    },
-    {
-      label: 'Serwer',
-      value: state.health.serverOnline ? 'Online' : 'Offline',
-      kind: state.health.serverOnline ? 'good' : 'warn'
-    }
-  ];
-
-  return (
-    <section className="preflight-panel" aria-label="Preflight">
-      {items.map((item) => (
-        <span className={`preflight-item preflight-${item.kind}`} key={item.label}>
-          <small>{item.label}</small>
-          <strong>{item.value}</strong>
-        </span>
-      ))}
     </section>
   );
 }
@@ -702,7 +684,7 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
 
   const downloadInstaller = async (): Promise<void> => {
     setBusy(true);
-    setMessage('Pobieranie instalatora Java 21 z Oracle...');
+    setMessage('Pobieranie instalatora Java 21 z Adoptium...');
     try {
       const result = await api.downloadJavaInstaller();
       setMessage(result.message);
@@ -749,7 +731,7 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
       <div className="java-help">
         <p>{message}</p>
         <div className="java-download-info">
-          <span>Źródło: Oracle JDK 21 Windows x64</span>
+          <span>Źródło: Eclipse Temurin JDK 21 Windows x64</span>
           <code>{installer.url}</code>
           <div className="progress-track">
             <span style={{ width: `${installer.progress}%` }} />
@@ -766,7 +748,7 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
             Uruchom instalator
           </button>
           <button type="button" onClick={() => void api.openJavaDownloadPage()} disabled={busy}>
-            Strona Oracle
+            Strona Adoptium
           </button>
           <button type="button" onClick={refresh} disabled={busy}>
             Sprawdź ponownie
@@ -776,7 +758,7 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
           </button>
         </div>
         <small>
-          Automatyczny tryb pobiera oficjalny instalator Oracle JDK 21 i uruchamia go normalnie. Klikaj w instalatorze
+          Automatyczny tryb pobiera oficjalny instalator Eclipse Temurin JDK 21 i uruchamia go normalnie. Klikaj w instalatorze
           Next/Install, a po zakończeniu wróć do launchera i użyj „Sprawdź ponownie”. Launcher nie instaluje Javy po cichu.
         </small>
       </div>
@@ -784,7 +766,15 @@ function JavaHelpModal({ state, onClose }: { state: LauncherState; onClose: () =
   );
 }
 
-function SettingsWorkspace({ state, activeCategory }: { state: LauncherState; activeCategory: SettingsCategory }): JSX.Element {
+function SettingsWorkspace({
+  state,
+  activeCategory,
+  onCheckUpdates
+}: {
+  state: LauncherState;
+  activeCategory: SettingsCategory;
+  onCheckUpdates: () => Promise<void>;
+}): JSX.Element {
   const [draft, setDraft] = useState<LauncherSettings>(state.settings);
   const [coreMessage, setCoreMessage] = useState('');
   const [accountMessage, setAccountMessage] = useState('');
@@ -962,6 +952,19 @@ function SettingsWorkspace({ state, activeCategory }: { state: LauncherState; ac
             </div>
             {serverMessage && <small>{serverMessage}</small>}
           </section>
+          <section className="account-box" aria-label="Launcher updates">
+            <div>
+              <strong>Aktualizacje</strong>
+              <p>
+                Obecna wersja: {state.update.currentVersion}
+                {state.update.available && state.update.latestVersion ? ` / dostępna ${state.update.latestVersion}` : ''}
+              </p>
+            </div>
+            <button type="button" onClick={() => void onCheckUpdates()} disabled={state.update.checking}>
+              {state.update.checking ? 'Sprawdzanie...' : 'Sprawdź aktualizacje'}
+            </button>
+            {state.update.error && <small>{state.update.error}</small>}
+          </section>
           <label className="field">
             <span>{copy.backend}</span>
             <input value={draft.backendUrl || 'Brak aktywnego serwera'} readOnly />
@@ -996,7 +999,7 @@ function SettingsWorkspace({ state, activeCategory }: { state: LauncherState; ac
             <div className="java-actions">
               <button type="button" onClick={() => void api.downloadJavaInstaller()}>Pobierz instalator Java 21</button>
               <button type="button" onClick={() => void api.openJavaInstaller()} disabled={state.system.javaInstaller.phase !== 'ready'}>Uruchom instalator</button>
-              <button type="button" onClick={() => void api.openJavaDownloadPage()}>Strona Oracle</button>
+              <button type="button" onClick={() => void api.openJavaDownloadPage()}>Strona Adoptium</button>
               <button type="button" onClick={refreshJava}>Sprawdź ponownie</button>
             </div>
             {state.system.javaInstaller.message && <small>{state.system.javaInstaller.message}</small>}
@@ -1116,7 +1119,7 @@ function McOptionInput({
     };
 
     return (
-      <div className="volume-control">
+      <div className="numeric-option-control">
         <input
           type="range"
           min={0}
@@ -1144,7 +1147,7 @@ function McOptionInput({
     };
 
     return (
-      <div className="fov-control">
+      <div className="numeric-option-control">
         <input
           type="range"
           min={30}
@@ -1184,6 +1187,35 @@ function McOptionInput({
     );
   }
 
+  if ((entry.type === 'integer' || entry.type === 'decimal') && typeof entry.min === 'number' && typeof entry.max === 'number') {
+    const step = entry.step ?? (entry.type === 'integer' ? 1 : 0.01);
+    const numericValue = getOptionNumber(value, entry.min, entry.max, entry.default);
+    const updateNumber = (nextValue: number): void => {
+      onChange(formatOptionNumber(nextValue, entry.min as number, entry.max as number, step, entry.type));
+    };
+
+    return (
+      <div className="numeric-option-control">
+        <input
+          type="range"
+          min={entry.min}
+          max={entry.max}
+          step={step}
+          value={numericValue}
+          onChange={(event) => updateNumber(Number(event.target.value))}
+        />
+        <input
+          type="number"
+          min={entry.min}
+          max={entry.max}
+          step={step}
+          value={numericValue}
+          onChange={(event) => updateNumber(Number(event.target.value))}
+        />
+      </div>
+    );
+  }
+
   if (entry.type === 'integer' || entry.type === 'decimal') {
     return (
       <input
@@ -1198,6 +1230,27 @@ function McOptionInput({
   }
 
   return <input value={value} onChange={(event) => onChange(event.target.value)} />;
+}
+
+function getOptionNumber(value: string, min: number, max: number, fallback?: string): number {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) return clampNumber(parsed, min, max);
+  const parsedFallback = Number(fallback);
+  if (Number.isFinite(parsedFallback)) return clampNumber(parsedFallback, min, max);
+  return min;
+}
+
+function formatOptionNumber(value: number, min: number, max: number, step: number, type: McOptionEntry['type']): string {
+  const clamped = clampNumber(value, min, max);
+  if (type === 'integer') return String(Math.round(clamped));
+  const precision = getStepPrecision(step);
+  return clamped.toFixed(precision).replace(/\.?0+$/, '') || '0';
+}
+
+function getStepPrecision(step: number): number {
+  const normalized = String(step);
+  if (!normalized.includes('.')) return 0;
+  return normalized.split('.')[1]?.length ?? 0;
 }
 
 function fovOptionToDegrees(value: string): number {
@@ -1564,33 +1617,75 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
             </div>
           </section>
         ) : (
-          <div className="modrinth-results" onScroll={handleScroll}>
-            {results.map((project) => {
-              const installedAddon = findInstalledAddon(project, installed);
+          <div className="modrinth-browser">
+            <div className="modrinth-results" onScroll={handleScroll}>
+              {results.map((project) => {
+                const installedAddon = findInstalledAddon(project, installed);
 
-              return (
-                <article className={`modrinth-card ${installedAddon ? 'installed' : ''}`} key={project.projectId}>
-                  {project.iconUrl ? <img src={project.iconUrl} alt="" /> : <span className="modrinth-icon-placeholder">{project.title.slice(0, 1)}</span>}
-                  <div>
-                    <header>
-                      <strong>{project.title}</strong>
-                      <small>{projectTypeLabel(project.projectType)} · {project.downloads.toLocaleString('pl-PL')} pobran</small>
-                    </header>
-                    <p>{project.description}</p>
-                    {project.projectType === 'mod' && (
-                      <small>Client: {project.clientSide || 'unknown'} · Server: {project.serverSide || 'unknown'}</small>
-                    )}
-                    {installedAddon && (
-                      <small className="installed-label">Zainstalowany: {installedAddon.fileName}</small>
-                    )}
-                  </div>
-                  <button type="button" onClick={() => install(project)} disabled={busy || Boolean(installedAddon)}>
-                    {installedAddon ? 'Zainstalowany' : 'Instaluj'}
-                  </button>
-                </article>
-              );
-            })}
-            {loadingMore && <p className="notice notice-warn">Wczytywanie kolejnych wynikow...</p>}
+                return (
+                  <article className={`modrinth-card ${installedAddon ? 'installed' : ''}`} key={project.projectId}>
+                    {project.iconUrl ? <img src={project.iconUrl} alt="" /> : <span className="modrinth-icon-placeholder">{project.title.slice(0, 1)}</span>}
+                    <div>
+                      <header>
+                        <strong>{project.title}</strong>
+                        <small>{projectTypeLabel(project.projectType)} · {project.downloads.toLocaleString('pl-PL')} pobran</small>
+                      </header>
+                      <p>{project.description}</p>
+                      {project.projectType === 'mod' && (
+                        <small>Client: {project.clientSide || 'unknown'} · Server: {project.serverSide || 'unknown'}</small>
+                      )}
+                      {installedAddon && (
+                        <small className="installed-label">Zainstalowany: {installedAddon.fileName}</small>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => install(project)} disabled={busy || Boolean(installedAddon)}>
+                      {installedAddon ? 'Zainstalowany' : 'Instaluj'}
+                    </button>
+                  </article>
+                );
+              })}
+              {loadingMore && <p className="notice notice-warn">Wczytywanie kolejnych wynikow...</p>}
+            </div>
+
+            <aside className="modrinth-sidebar">
+              <section className="modrinth-side-card">
+                <h3>Aktywne filtry</h3>
+                <p>Przeglądaj dodatki bez wychodzenia z launchera. Styl i układ są bliżej przeglądarki instancji niż surowego formularza.</p>
+                <div className="modrinth-side-stats">
+                  <span>
+                    <small>Typ</small>
+                    <strong>{projectTypeLabel(projectType)}</strong>
+                  </span>
+                  <span>
+                    <small>Sortowanie</small>
+                    <strong>{sort}</strong>
+                  </span>
+                  <span>
+                    <small>Fraza</small>
+                    <strong>{query.trim() || 'Brak'}</strong>
+                  </span>
+                </div>
+              </section>
+
+              <section className="modrinth-side-card">
+                <h3>Stan biblioteki</h3>
+                <div className="modrinth-side-stats">
+                  <span>
+                    <small>Wyniki</small>
+                    <strong>{results.length}</strong>
+                  </span>
+                  <span>
+                    <small>Twoje dodatki</small>
+                    <strong>{userInstalled.length}</strong>
+                  </span>
+                  <span>
+                    <small>Serwerowe</small>
+                    <strong>{serverInstalled.length}</strong>
+                  </span>
+                </div>
+                <p>{message}</p>
+              </section>
+            </aside>
           </div>
         )}
       </div>

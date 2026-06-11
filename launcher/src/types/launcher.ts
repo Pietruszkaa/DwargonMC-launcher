@@ -331,6 +331,7 @@ export type LauncherApi = {
   switchServer(serverId: string): Promise<LauncherState>;
   saveSettings(settings: LauncherSettings): Promise<LauncherSettings>;
   saveProfile(profile: LauncherProfile): Promise<LauncherProfile>;
+  chooseSetupDirectory(): Promise<LauncherState>;
   completeSetup(): Promise<LauncherProfile>;
   loginMicrosoft(): Promise<LauncherProfile>;
   logoutMicrosoft(): Promise<LauncherProfile>;

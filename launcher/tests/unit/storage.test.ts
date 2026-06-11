@@ -1,11 +1,20 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { saveMicrosoftRefreshToken } from '../../electron/main/keychain';
 import { readProfile, saveProfile } from '../../electron/main/storage';
 import type { LauncherPaths } from '../../electron/main/paths';
 
+vi.mock('../../electron/main/keychain', () => ({
+  saveMicrosoftRefreshToken: vi.fn()
+}));
+
 describe('launcher profile storage', () => {
+  beforeEach(() => {
+    vi.mocked(saveMicrosoftRefreshToken).mockReset();
+  });
+
   it('migrates old profiles as setup-complete with empty playtime counters', async () => {
     const paths = await tempPaths();
     await fs.mkdir(paths.launcherDataDir, { recursive: true });
@@ -60,7 +69,6 @@ describe('launcher profile storage', () => {
       microsoft: {
         name: 'PremiumPlayer',
         uuid: 'uuid',
-        refreshToken: 'refresh-token',
         xuid: 'xuid',
         expiresAt: 123
       },
@@ -79,71 +87,92 @@ describe('launcher profile storage', () => {
     await expect(fs.stat(path.join(paths.launcherDataDir, 'microsoft-token.bin'))).rejects.toThrow();
   });
 
-  it('stores microsoft refresh token outside profile.json', async () => {
-    const paths = await tempPaths();
-    await fs.mkdir(paths.launcherDataDir, { recursive: true });
-
-    const saved = await saveProfile(paths, {
-      nickname: 'Player',
-      accountMode: 'microsoft',
-      microsoft: {
-        name: 'PremiumPlayer',
-        uuid: 'uuid',
-        refreshToken: 'refresh-token',
-        xuid: 'xuid',
-        expiresAt: 123
-      },
-      lastPlayedAt: null,
-      lastSessionSeconds: 0,
-      totalPlaySeconds: 0,
-      launchCount: 0,
-      setupComplete: true
-    });
-
-    expect(saved.microsoft?.refreshToken).toBe('refresh-token');
-
-    const raw = JSON.parse(await fs.readFile(paths.profileFile, 'utf8'));
-    expect(raw.microsoft).toEqual({
-      name: 'PremiumPlayer',
-      uuid: 'uuid',
-      xuid: 'xuid',
-      expiresAt: 123
-    });
-    expect(raw.microsoft.refreshToken).toBeUndefined();
-
-    const tokenFile = path.join(paths.launcherDataDir, 'microsoft-token.bin');
-    const encrypted = await fs.readFile(tokenFile);
-    expect(encrypted.includes(Buffer.from('refresh-token'))).toBe(false);
-
-    const loaded = await readProfile(paths);
-    expect(loaded.microsoft?.refreshToken).toBe('refresh-token');
-  });
-
-  it('migrates legacy refresh tokens from profile.json into encrypted storage', async () => {
+  it('moves legacy microsoft refresh token to the system credential store', async () => {
     const paths = await tempPaths();
     await fs.mkdir(paths.launcherDataDir, { recursive: true });
     await fs.writeFile(
       paths.profileFile,
       JSON.stringify({
-        nickname: 'Player',
+        nickname: 'PremiumPlayer',
         accountMode: 'microsoft',
         microsoft: {
           name: 'PremiumPlayer',
           uuid: 'uuid',
-          refreshToken: 'legacy-refresh-token',
           xuid: 'xuid',
-          expiresAt: 123
-        },
-        setupComplete: true
+          expiresAt: 123,
+          refreshToken: 'refresh-secret'
+        }
       })
     );
 
-    const loaded = await readProfile(paths);
-    expect(loaded.microsoft?.refreshToken).toBe('legacy-refresh-token');
+    const profile = await readProfile(paths);
+    const persisted = JSON.parse(await fs.readFile(paths.profileFile, 'utf8'));
 
-    const raw = JSON.parse(await fs.readFile(paths.profileFile, 'utf8'));
-    expect(raw.microsoft.refreshToken).toBeUndefined();
-    await expect(fs.stat(path.join(paths.launcherDataDir, 'microsoft-token.bin'))).resolves.toBeDefined();
+    expect(saveMicrosoftRefreshToken).toHaveBeenCalledWith('uuid', 'refresh-secret');
+    expect(profile).toMatchObject({
+      nickname: 'PremiumPlayer',
+      accountMode: 'microsoft',
+      microsoft: {
+        name: 'PremiumPlayer',
+        uuid: 'uuid',
+        xuid: 'xuid',
+        expiresAt: 123
+      }
+    });
+    expect(persisted.microsoft.refreshToken).toBeUndefined();
+  });
+
+  it('drops legacy microsoft login when the credential store rejects migration', async () => {
+    vi.mocked(saveMicrosoftRefreshToken).mockRejectedValueOnce(new Error('keychain unavailable'));
+
+    const paths = await tempPaths();
+    await fs.mkdir(paths.launcherDataDir, { recursive: true });
+    await fs.writeFile(
+      paths.profileFile,
+      JSON.stringify({
+        nickname: 'PremiumPlayer',
+        accountMode: 'microsoft',
+        microsoft: {
+          name: 'PremiumPlayer',
+          uuid: 'uuid',
+          refreshToken: 'refresh-secret'
+        }
+      })
+    );
+
+    const profile = await readProfile(paths);
+    const persisted = JSON.parse(await fs.readFile(paths.profileFile, 'utf8'));
+
+    expect(profile.accountMode).toBe('offline');
+    expect(profile.microsoft).toBeNull();
+    expect(persisted.microsoft).toBeNull();
+  });
+
+  it('removes legacy microsoft refresh token even when account mode is offline', async () => {
+    const paths = await tempPaths();
+    await fs.mkdir(paths.launcherDataDir, { recursive: true });
+    await fs.writeFile(
+      paths.profileFile,
+      JSON.stringify({
+        nickname: 'OfflinePlayer',
+        accountMode: 'offline',
+        microsoft: {
+          name: 'PremiumPlayer',
+          uuid: 'uuid',
+          refreshToken: 'legacy-secret',
+          xuid: 'xuid',
+          expiresAt: 123
+        }
+      })
+    );
+
+    const profile = await readProfile(paths);
+    const persisted = JSON.parse(await fs.readFile(paths.profileFile, 'utf8'));
+
+    expect(saveMicrosoftRefreshToken).not.toHaveBeenCalled();
+    expect(profile.accountMode).toBe('offline');
+    expect(profile.microsoft).toBeNull();
+    expect(persisted.microsoft).toBeNull();
   });
 });
 

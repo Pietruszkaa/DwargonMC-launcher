@@ -1,6 +1,5 @@
+import { app } from 'electron';
 import fsSync from 'node:fs';
-import { getElectronApp } from './electronRuntime';
-import { constants as fsConstants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -22,11 +21,9 @@ export type LauncherPaths = {
   neoforgeInstallerFile: string;
 };
 
-const BACKGROUND_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 const DEFAULT_INSTANCE_ID = 'dwargonmc';
 
 export function getInstallDir(): string {
-  const app = getElectronApp();
   return resolveInstallDir({
     isPackaged: app.isPackaged,
     portableExecutableDir: process.env.PORTABLE_EXECUTABLE_DIR,
@@ -52,10 +49,10 @@ export function resolveInstallDir({
 }
 
 export function getLauncherPaths(): LauncherPaths {
-  const app = getElectronApp();
   const installDir = getInstallDir();
   const appDir = resolveAppDir({
     isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
     executablePath: process.execPath,
     cwd: process.cwd()
   });
@@ -100,7 +97,6 @@ export async function ensureLauncherDirs(paths: LauncherPaths): Promise<void> {
   await fs.mkdir(path.join(paths.minecraftDir, 'mods'), { recursive: true });
   await fs.mkdir(paths.launcherDataDir, { recursive: true });
   await fs.mkdir(path.join(paths.assetsDir, 'backgrounds'), { recursive: true });
-  await copyBundledBackgrounds(paths);
 }
 
 function hasLegacyInstanceData(installDir: string): boolean {
@@ -114,40 +110,15 @@ function normalizeInstanceId(value: string): string {
 
 export function resolveAppDir({
   isPackaged,
+  appPath,
   executablePath,
   cwd
 }: {
   isPackaged: boolean;
+  appPath?: string;
   executablePath: string;
   cwd: string;
 }): string {
-  return isPackaged ? path.dirname(executablePath) : cwd;
-}
-
-async function copyBundledBackgrounds(paths: LauncherPaths): Promise<void> {
-  const sourceDir = path.join(paths.bundledAssetsDir, 'backgrounds');
-  const targetDir = path.join(paths.assetsDir, 'backgrounds');
-  if (sourceDir === targetDir) return;
-
-  let entries: Array<{ isFile(): boolean; name: string }>;
-  try {
-    entries = await fs.readdir(sourceDir, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-    throw error;
-  }
-
-  await fs.mkdir(targetDir, { recursive: true });
-  await Promise.all(
-    entries
-      .filter((entry) => entry.isFile() && BACKGROUND_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
-      .map(async (entry) => {
-        const targetFile = path.join(targetDir, entry.name);
-        try {
-          await fs.copyFile(path.join(sourceDir, entry.name), targetFile, fsConstants.COPYFILE_EXCL);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        }
-      })
-  );
+  if (!isPackaged) return cwd;
+  return appPath || path.dirname(executablePath);
 }
