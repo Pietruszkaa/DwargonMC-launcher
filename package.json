@@ -11,6 +11,7 @@
     "launcher:test": "npm --prefix launcher test",
     "launcher:build": "npm --prefix launcher run build",
     "launcher:dist:win": "npm --prefix launcher run dist:win",
+    "launcher:dist:linux": "npm --prefix launcher run dist:linux",
     "sync:start": "npm --prefix sync-server start",
     "sync:manifest": "npm --prefix sync-server run manifest"
   },
