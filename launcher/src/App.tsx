@@ -1464,7 +1464,7 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
       }
       loadingResultsRef.current = false;
     }
-  }, [busy, hasMore, loadingMore, offset, projectType, query, results.length, sort]);
+  }, [busy, hasMore, loadingMore, offset, projectType, query, sort]);
 
   useEffect(() => {
     void refreshInstalled();
@@ -1502,7 +1502,7 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [loadResults, projectType, query, sort, view]);
+  }, [projectType, query, sort, view]);
 
   const handleScroll = (event: UIEvent<HTMLDivElement>): void => {
     const target = event.currentTarget;
