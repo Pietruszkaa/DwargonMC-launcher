@@ -71,6 +71,8 @@ jobs:
               Get-Content $_.FullName | Select-String '"version"'
             }
 
+      - name: Patch request dependency tree for electron-builder
+        run: node launcher/scripts/patch-request-form-data.cjs
 
       - name: Build Windows portable
         run: npm run launcher:dist:win

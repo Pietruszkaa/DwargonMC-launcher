@@ -44,6 +44,10 @@ jobs:
         run: npm test
         working-directory: launcher
 
+      - name: Patch request dependency tree for electron-builder
+        run: node scripts/patch-request-form-data.cjs
+        working-directory: launcher
+
       - name: Build Windows portable
         run: npm run dist:win
         working-directory: launcher
