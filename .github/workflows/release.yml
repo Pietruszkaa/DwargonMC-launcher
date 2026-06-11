@@ -16,7 +16,6 @@ jobs:
   windows:
     name: Build and publish Windows portable
     runs-on: windows-2025
-    needs: windows
     
     steps:
       - name: Checkout
@@ -125,7 +124,8 @@ jobs:
   linux:
     name: Build and publish Linux tar.gz
     runs-on: ubuntu-24.04
-
+    needs: windows
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
