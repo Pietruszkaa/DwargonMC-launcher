@@ -7,7 +7,7 @@ import { t } from '@/lib/i18n';
 import type { Announcement, CrashInfo, InstalledModrinthProject, LauncherSettings, LauncherState, MinecraftInstanceCheck, MinecraftOptionsState, ModrinthAddonUpdate, ModrinthProject, ModrinthProjectType, ModrinthSort, SyncPlanChange } from '@/types/launcher';
 
 type Popup = 'settings' | 'files' | 'map' | 'logs' | 'modrinth' | null;
-type SettingsCategory = 'launcher' | 'arguments' | 'mc-options';
+type SettingsCategory = 'launcher' | 'mc-arguments' | 'mc-options';
 type McOptionEntry = {
   key: string;
   label: string;
@@ -300,15 +300,20 @@ export function App(): JSX.Element {
                 <button className="menu-btn back" type="button" onClick={() => setPopup(null)}>
                   Back
                 </button>
-                <button className={activeSettingsCategory === 'launcher' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('launcher')}>
-                  Launcher
-                </button>
-                <button className={activeSettingsCategory === 'arguments' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('arguments')}>
-                  Argumenty MC
-                </button>
-                <button className={activeSettingsCategory === 'mc-options' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('mc-options')}>
-                  Opcje MC
-                </button>
+                {activeSettingsCategory === 'launcher' ? (
+                  <button className="menu-btn active" type="button">
+                    Launcher
+                  </button>
+                ) : (
+                  <>
+                    <button className={activeSettingsCategory === 'mc-options' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('mc-options')}>
+                      Ustawienia MC
+                    </button>
+                    <button className={activeSettingsCategory === 'mc-arguments' ? 'menu-btn active' : 'menu-btn'} type="button" onClick={() => setActiveSettingsCategory('mc-arguments')}>
+                      Argumenty MC
+                    </button>
+                  </>
+                )}
               </>
             ) : (
               <>
@@ -330,7 +335,7 @@ export function App(): JSX.Element {
                   )}
                 </div>
                 <button className="menu-btn" type="button" onClick={openMinecraftSettings}>
-                  Minecraft
+                  Ustawienia MC
                 </button>
                 <button className="menu-btn" type="button" onClick={() => setPopup('logs')}>
                   {copy.logs}
@@ -1019,7 +1024,7 @@ function SettingsWorkspace({
         </div>
       )}
 
-      {activeCategory === 'arguments' && (
+      {activeCategory === 'mc-arguments' && (
         <div className="settings-grid settings-section">
           <label className="field">
             <span>{copy.ram}: {draft.ramMb} MB</span>
@@ -1069,7 +1074,7 @@ function SettingsWorkspace({
 }
 
 function settingsCategoryTitle(category: SettingsCategory): string {
-  if (category === 'arguments') return 'Argumenty MC';
+  if (category === 'mc-arguments') return 'Argumenty MC';
   if (category === 'mc-options') return 'Ustawienia MC';
   return 'Launcher';
 }
@@ -1411,6 +1416,7 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
   const [view, setView] = useState<'browse' | 'installed'>('browse');
   const [message, setMessage] = useState('');
   const loadingResultsRef = useRef(false);
+  const initializedRef = useRef(false);
   const userInstalled = installed.filter((item) => !item.managed);
   const serverInstalled = installed.filter((item) => item.managed);
 
@@ -1462,7 +1468,11 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
 
   useEffect(() => {
     void refreshInstalled();
+
+    let cancelled = false;
     void api.getModrinthCache().then((cache) => {
+      if (cancelled) return;
+
       if (cache?.results.length) {
         setQuery(cache.query);
         setProjectType(cache.projectType);
@@ -1471,12 +1481,28 @@ function ModrinthModal({ onClose }: { onClose: () => void }): JSX.Element {
         setOffset(cache.results.length);
         setHasMore(cache.results.length === MODRINTH_PAGE_SIZE);
         setMessage('');
+        initializedRef.current = true;
         return;
       }
 
+      initializedRef.current = true;
       void loadResults(true);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!initializedRef.current || view !== 'browse') return undefined;
+
+    const timer = window.setTimeout(() => {
+      void loadResults(true);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [loadResults, projectType, query, sort, view]);
 
   const handleScroll = (event: UIEvent<HTMLDivElement>): void => {
     const target = event.currentTarget;

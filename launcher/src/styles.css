@@ -1643,6 +1643,7 @@ button:disabled {
   min-height: 0;
   display: grid;
   gap: 10px;
+  max-height: min(620px, 68vh);
   overflow: auto;
 }
 
@@ -1650,6 +1651,7 @@ button:disabled {
   min-height: 0;
   display: grid;
   gap: 10px;
+  max-height: min(620px, 68vh);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.03);
