@@ -218,6 +218,7 @@ export type JavaCheckResult = {
   ok: boolean;
   path: string;
   version: string | null;
+  requiredMajor: number;
   message: string;
 };
 

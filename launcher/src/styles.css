@@ -1110,7 +1110,7 @@ button:disabled {
 }
 
 .modal-wide {
-  width: min(980px, 100%);
+  width: min(1080px, 100%);
 }
 
 .modal-header,
@@ -1599,9 +1599,13 @@ button:disabled {
 
 .modrinth-controls {
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) 160px 150px auto;
+  grid-template-columns: minmax(0, 1fr) auto 160px 150px auto;
   gap: 12px;
   align-items: end;
+}
+
+.modrinth-search {
+  grid-column: 1 / -1;
 }
 
 .modrinth-tabs {
@@ -1632,9 +1636,7 @@ button:disabled {
 
 .modrinth-browser {
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 16px;
+  display: block;
 }
 
 .modrinth-results {
@@ -1642,62 +1644,6 @@ button:disabled {
   display: grid;
   gap: 10px;
   overflow: auto;
-}
-
-.modrinth-sidebar {
-  min-height: 0;
-  display: grid;
-  gap: 12px;
-  align-content: start;
-}
-
-.modrinth-side-card {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.modrinth-side-card h3,
-.modrinth-side-card p {
-  margin: 0;
-}
-
-.modrinth-side-card p {
-  color: var(--muted);
-  line-height: 1.45;
-}
-
-.modrinth-side-stats {
-  display: grid;
-  gap: 10px;
-}
-
-.modrinth-side-stats span {
-  display: grid;
-  gap: 5px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-
-.modrinth-side-stats span:first-child {
-  padding-top: 0;
-  border-top: 0;
-}
-
-.modrinth-side-stats small {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.modrinth-side-stats strong {
-  overflow-wrap: anywhere;
-  font-size: 14px;
 }
 
 .installed-addons {
@@ -2069,44 +2015,19 @@ button:disabled {
 }
 
 .logs-toolbar {
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  padding-block: 12px;
+  justify-content: flex-end;
+  padding-block: 10px;
 }
 
 .logs-toolbar .row-field {
   width: auto;
-}
-
-.logs-filter {
-  width: min(220px, 100%);
-}
-
-.logs-filter select {
-  min-height: 34px;
-}
-
-.logs-copy-actions {
-  margin-left: auto;
-  display: flex;
-  flex-wrap: wrap;
   gap: 8px;
-}
-
-.logs-copy-actions button {
-  min-height: 34px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-  padding: 0 10px;
-  font-weight: 800;
 }
 
 .logs-view {
   margin: 0;
-  min-height: min(360px, 48vh);
-  max-height: 64vh;
+  min-height: min(460px, 60vh);
+  max-height: 72vh;
   overflow: auto;
   padding: 18px;
   color: #d7ddd8;
@@ -2143,8 +2064,7 @@ button:disabled {
   }
 
   .map-panel,
-  .right-stack,
-  .modrinth-sidebar {
+  .right-stack {
     width: 100%;
   }
 
