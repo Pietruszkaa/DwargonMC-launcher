@@ -10,6 +10,8 @@ const JAVA_MAJOR_VERSION = 21;
 const ADOPTIUM_RELEASES_PAGE_URL = 'https://adoptium.net/temurin/releases/?version=21';
 const ADOPTIUM_API_URL =
   'https://api.adoptium.net/v3/assets/latest/21/hotspot?architecture=x64&image_type=jdk&os=windows&vendor=eclipse&jvm_impl=hotspot&heap_size=normal';
+const ADOPTIUM_API_TIMEOUT_MS = 15_000;
+const JAVA_INSTALLER_DOWNLOAD_TIMEOUT_MS = 180_000;
 
 export type JavaCheckResult = {
   ok: boolean;
@@ -232,12 +234,28 @@ export async function downloadJavaInstaller(
 }
 
 async function resolveAdoptiumJavaDownloadTarget(): Promise<JavaDownloadTarget> {
-  const response = await fetch(ADOPTIUM_API_URL, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'DwargonMC-Launcher'
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ADOPTIUM_API_TIMEOUT_MS);
+
+  let response: Response;
+
+  try {
+    response = await fetch(ADOPTIUM_API_URL, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'DwargonMC-Launcher'
+      }
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error('Przekroczono limit czasu pobierania metadanych Java z Adoptium.');
     }
-  });
+
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     throw new Error(`Adoptium API HTTP ${response.status}`);
@@ -265,7 +283,7 @@ async function resolveAdoptiumJavaDownloadTarget(): Promise<JavaDownloadTarget> 
   };
 }
 
-function normalizeSha256(value: string): string | null {
+export function normalizeSha256(value: string): string | null {
   const hash = value.trim().toLowerCase();
   return /^[a-f0-9]{64}$/.test(hash) ? hash : null;
 }
@@ -275,12 +293,28 @@ async function downloadFile(
   targetPath: string,
   onProgress: (downloadedBytes: number, totalBytes: number | null) => void
 ): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/octet-stream',
-      'User-Agent': 'DwargonMC-Launcher'
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), JAVA_INSTALLER_DOWNLOAD_TIMEOUT_MS);
+
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/octet-stream',
+        'User-Agent': 'DwargonMC-Launcher'
+      }
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error('Przekroczono limit czasu pobierania instalatora Java.');
     }
-  });
+
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok || !response.body) {
     throw new Error(`Pobieranie instalatora Java HTTP ${response.status}`);
@@ -316,12 +350,18 @@ function safeInstallerName(fileName: string): string {
   const base = path.basename(fileName).replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim();
 
   if (!base || base === '.' || base === '..') {
-    return `OpenJDK${JAVA_MAJOR_VERSION}-temurin-windows-x64.msi`;
+    throw new Error('Adoptium zwróciło niepoprawną nazwę instalatora Java.');
   }
 
-  if (base.toLowerCase().endsWith('.msi') || base.toLowerCase().endsWith('.exe')) {
-    return base;
+  const lower = base.toLowerCase();
+
+  if (!lower.endsWith('.msi') && !lower.endsWith('.exe')) {
+    throw new Error(`Adoptium zwróciło nieobsługiwany typ instalatora Java: ${base}`);
   }
 
-  return `${base}.msi`;
+  return base;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
 }

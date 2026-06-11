@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { compareNeoForgeVersions, forgeMetadataIsStale, minecraftDownloadMessage, parseNeoForgeVersions, purgeStaleForgeMetadata, splitLaunchArgs } from '../../electron/main/game';
+import {
+  compareNeoForgeVersions,
+  forgeMetadataIsStale,
+  isSafeNeoForgeVersionToken,
+  minecraftDownloadMessage,
+  parseNeoForgeVersions,
+  parseSha256Checksum,
+  purgeStaleForgeMetadata,
+  splitLaunchArgs
+} from '../../electron/main/game';
 
 describe('NeoForge version resolver helpers', () => {
   it('parses 1.21.1 NeoForge versions from Maven metadata', () => {
@@ -26,6 +35,19 @@ describe('NeoForge version resolver helpers', () => {
     expect(compareNeoForgeVersions('21.1.230', '21.1.99')).toBeGreaterThan(0);
     expect(compareNeoForgeVersions('21.1.230', '21.1.230')).toBe(0);
     expect(compareNeoForgeVersions('21.1.229', '21.1.230')).toBeLessThan(0);
+  });
+
+  it('parses NeoForge SHA256 checksum files', () => {
+    const hash = 'A'.repeat(64);
+    expect(parseSha256Checksum(`${hash}  neoforge-21.1.230-installer.jar\n`)).toBe(hash.toLowerCase());
+    expect(parseSha256Checksum('not-a-hash')).toBeNull();
+  });
+
+  it('accepts only safe NeoForge version tokens', () => {
+    expect(isSafeNeoForgeVersionToken('21.1.230')).toBe(true);
+    expect(isSafeNeoForgeVersionToken('21.1.230-beta')).toBe(true);
+    expect(isSafeNeoForgeVersionToken('../21.1.230')).toBe(false);
+    expect(isSafeNeoForgeVersionToken('21.1.230/evil')).toBe(false);
   });
 
   it('detects stale MCLC forge metadata', () => {

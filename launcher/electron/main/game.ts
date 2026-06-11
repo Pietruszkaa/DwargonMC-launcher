@@ -176,9 +176,8 @@ async function ensureNeoForgeInstaller(
 ): Promise<{ version: string; file: string }> {
   events.onStatus({ running: false, phase: 'preparing', message: 'Sprawdzanie NeoForge...' });
 
-  const version = minecraft.loaderVersion && minecraft.loaderVersion !== 'latest'
-    ? minecraft.loaderVersion
-    : await resolveLatestNeoForgeVersion(minecraft.version);
+  const explicitVersion = explicitNeoForgeLoaderVersion(minecraft.loaderVersion);
+  const version = explicitVersion ?? await resolveLatestNeoForgeVersion(minecraft.version);
 
   const destination = path.join(launcherDataDir, `neoforge-${version}-installer.jar`);
   const tempDestination = `${destination}.download`;
@@ -306,6 +305,22 @@ function neoForgeInstallerUrl(version: string): string {
   return `https://maven.neoforged.net/releases/net/neoforged/neoforge/${version}/neoforge-${version}-installer.jar`;
 }
 
+export function isSafeNeoForgeVersionToken(version: string): boolean {
+  return /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9][A-Za-z0-9._-]*)?$/.test(version);
+}
+
+function explicitNeoForgeLoaderVersion(loaderVersion: string | null): string | null {
+  if (!loaderVersion || loaderVersion === 'latest') return null;
+
+  const trimmed = loaderVersion.trim();
+
+  if (!isSafeNeoForgeVersionToken(trimmed)) {
+    throw new Error(`Backend podał niepoprawną wersję NeoForge: ${loaderVersion}`);
+  }
+
+  return trimmed;
+}
+
 async function hasNeoForgeInstaller(launcherDataDir: string, loaderVersion: string | null): Promise<boolean> {
   if (loaderVersion) return fileExists(path.join(launcherDataDir, `neoforge-${loaderVersion}-installer.jar`));
 
@@ -424,7 +439,12 @@ export function forgeMetadataIsStale(versionJson: string, expectedLoaderVersion:
 
     if (!id) return false;
 
-    return id.includes('neoforge-') && !id.includes(`neoforge-${expectedLoaderVersion}`);
+    const match = id.match(/(?:^|-)neoforge-(?<version>\d+\.\d+\.\d+(?:[-+][A-Za-z0-9][A-Za-z0-9._-]*)?)$/);
+    const actualLoaderVersion = match?.groups?.version ?? null;
+
+    if (!actualLoaderVersion) return false;
+
+    return actualLoaderVersion !== expectedLoaderVersion;
   } catch {
     return false;
   }
@@ -436,12 +456,7 @@ export async function purgeStaleForgeMetadata(
   loaderVersion: string,
   events?: GameEvents
 ): Promise<boolean> {
-  const candidates = [
-    path.join(minecraftDir, 'forge', minecraftVersion),
-    path.join(minecraftDir, 'versions', `${minecraftVersion}-forge-${loaderVersion}`),
-    path.join(minecraftDir, 'versions', `${minecraftVersion}-neoforge-${loaderVersion}`)
-  ];
-
+  const candidates = await staleForgeMetadataCandidates(minecraftDir, minecraftVersion);
   let removed = false;
 
   for (const versionDir of candidates) {
@@ -465,6 +480,45 @@ export async function purgeStaleForgeMetadata(
   }
 
   return removed;
+}
+
+async function staleForgeMetadataCandidates(minecraftDir: string, minecraftVersion: string): Promise<string[]> {
+  const candidates: string[] = [];
+
+  const versionsDir = path.join(minecraftDir, 'versions');
+  const legacyForgeDir = path.join(minecraftDir, 'forge');
+
+  try {
+    const entries = await fs.readdir(versionsDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const name = entry.name.toLowerCase();
+
+      if (!name.includes(minecraftVersion.toLowerCase())) continue;
+      if (!name.includes('forge') && !name.includes('neoforge')) continue;
+
+      candidates.push(path.join(versionsDir, entry.name));
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
+  try {
+    const entries = await fs.readdir(legacyForgeDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name !== minecraftVersion && !entry.name.includes(minecraftVersion)) continue;
+
+      candidates.push(path.join(legacyForgeDir, entry.name));
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
+  return [...new Set(candidates)];
 }
 
 async function fileExists(file: string): Promise<boolean> {

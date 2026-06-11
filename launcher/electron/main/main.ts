@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, net, protocol, shell, type NativeImage } from 'electron';
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, net, protocol, shell, type NativeImage, type OpenDialogOptions } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -221,6 +221,41 @@ function registerIpc(): void {
     return state.profile;
   });
 
+  ipcMain.handle('launcher:choose-setup-directory', async () => {
+    const options: OpenDialogOptions = {
+      title: 'Wybierz folder danych launchera',
+      properties: ['openDirectory', 'createDirectory']
+    };
+    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+
+    const selectedDir = result.canceled ? null : result.filePaths[0];
+    if (!selectedDir) return state;
+
+    basePaths = buildLauncherPaths(selectedDir, basePaths.appDir);
+    paths = basePaths;
+    await ensureLauncherDirs(paths);
+
+    state.settings = await readSettings(paths);
+    state.profile = await readProfile(paths);
+    state.servers = await readServerRegistry(basePaths);
+    state.setup = {
+      ...state.setup,
+      reason: 'first-run',
+      baseInstallDir: paths.installDir,
+      activeInstallDir: paths.installDir,
+      usingNestedDir: false,
+      suggestedDir: null,
+      crowdedEntries: [],
+      complete: state.profile.setupComplete,
+      required: app.isPackaged && !state.profile.setupComplete
+    };
+    state.managedFiles = await listManagedLocalFiles(paths.minecraftDir);
+    state.playerAddons = await listPlayerAddonFiles(paths.minecraftDir);
+    state.backgrounds = await listBackgroundUrls(paths);
+    emitState();
+    return state;
+  });
+
   ipcMain.handle('launcher:complete-setup', async () => {
     state.profile = await saveProfile(paths, {
       ...state.profile,
@@ -264,7 +299,7 @@ function registerIpc(): void {
         await deleteMicrosoftRefreshToken(microsoftUuid);
       } catch (error) {
         appendLog(error instanceof Error ? `Nie udało się usunąć tokena Microsoft: ${error.message}` : 'Nie udało się usunąć tokena Microsoft.');
-     }
+      }
     }
 
     state.profile = await saveProfile(paths, {
@@ -628,7 +663,14 @@ async function resolveAuthorization(nickname: string): Promise<MclcAuthorization
       throw new Error('Zaloguj konto Microsoft ponownie.');
     }
 
-    const refreshToken = await getMicrosoftRefreshToken(microsoft.uuid);
+    let refreshToken: string | null;
+
+    try {
+      refreshToken = await getMicrosoftRefreshToken(microsoft.uuid);
+    } catch (error) {
+      appendLog(error instanceof Error ? `Nie można odczytać tokena Microsoft: ${error.message}` : 'Nie można odczytać tokena Microsoft.');
+      throw new Error('Nie można odczytać tokena Microsoft z systemowego magazynu. Zaloguj konto ponownie.');
+    }
 
     if (!refreshToken) {
       throw new Error('Zaloguj konto Microsoft ponownie.');

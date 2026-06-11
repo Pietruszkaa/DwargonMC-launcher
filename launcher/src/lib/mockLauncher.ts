@@ -164,8 +164,8 @@ let state: LauncherState = {
       downloadedBytes: 0,
       totalBytes: null,
       path: null,
-      url: 'https://download.oracle.com/java/21/latest/jdk-21_windows-x64_bin.exe',
-      pageUrl: 'https://www.oracle.com/pl/java/technologies/downloads/#jdk21-windows',
+      url: 'https://api.adoptium.net/v3/assets/latest/21/hotspot?architecture=x64&image_type=jdk&os=windows&vendor=eclipse&jvm_impl=hotspot&heap_size=normal',
+      pageUrl: 'https://adoptium.net/temurin/releases/?version=21',
       message: ''
     }
   }
@@ -235,6 +235,22 @@ export function getLauncherApi(): LauncherApi {
       state = { ...state, profile: next };
       emitState();
       return next;
+    },
+    async chooseSetupDirectory() {
+      state = {
+        ...state,
+        setup: {
+          ...state.setup,
+          reason: 'first-run',
+          baseInstallDir: '/mock/Dwargon Launcher',
+          activeInstallDir: '/mock/Dwargon Launcher',
+          usingNestedDir: false,
+          suggestedDir: null,
+          crowdedEntries: []
+        }
+      };
+      emitState();
+      return state;
     },
     async completeSetup() {
       state = {
@@ -427,9 +443,9 @@ export function getLauncherApi(): LauncherApi {
         progress: 100,
         downloadedBytes: 0,
         totalBytes: null,
-        path: '/mock/jdk-21_windows-x64_bin.exe',
-        url: 'https://download.oracle.com/java/21/latest/jdk-21_windows-x64_bin.exe',
-        pageUrl: 'https://www.oracle.com/pl/java/technologies/downloads/#jdk21-windows',
+        path: '/mock/OpenJDK21U-jdk_x64_windows_hotspot_mock.msi',
+        url: 'https://api.adoptium.net/v3/assets/latest/21/hotspot?architecture=x64&image_type=jdk&os=windows&vendor=eclipse&jvm_impl=hotspot&heap_size=normal',
+        pageUrl: 'https://adoptium.net/temurin/releases/?version=21',
         message: 'Mock: pobrano instalator Java 21.'
       };
       emitState();

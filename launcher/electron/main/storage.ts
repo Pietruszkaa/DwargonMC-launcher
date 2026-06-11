@@ -120,34 +120,47 @@ export async function saveSettings(paths: LauncherPaths, settings: LauncherSetti
 }
 
 export async function readProfile(paths: LauncherPaths): Promise<LauncherProfile> {
+  let profile: LegacyLauncherProfile;
+
   try {
     const raw = await fs.readFile(paths.profileFile, 'utf8');
-    const profile = JSON.parse(raw) as LegacyLauncherProfile;
+    profile = JSON.parse(raw) as LegacyLauncherProfile;
+  } catch {
+    return defaultProfile();
+  }
 
-    const microsoft = normalizeMicrosoftProfile(profile.microsoft);
-    const accountMode = profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline';
+  const microsoft = normalizeMicrosoftProfile(profile.microsoft);
+  const accountMode = profile.accountMode === 'microsoft' && microsoft ? 'microsoft' : 'offline';
 
-    if (accountMode === 'microsoft' && microsoft && hasLegacyRefreshToken(profile.microsoft)) {
+  if (accountMode === 'microsoft' && microsoft && hasLegacyRefreshToken(profile.microsoft)) {
+    try {
       await saveMicrosoftRefreshToken(microsoft.uuid, String(profile.microsoft.refreshToken));
-
+    } catch {
       const migrated = normalizeProfile({
         ...profile,
-        accountMode,
-        microsoft
+        accountMode: 'offline',
+        microsoft: null
       });
 
       await writeJson(paths.profileFile, migrated);
       return migrated;
     }
 
-    return normalizeProfile({
+    const migrated = normalizeProfile({
       ...profile,
       accountMode,
-      microsoft: accountMode === 'microsoft' ? microsoft : null
+      microsoft
     });
-  } catch {
-    return defaultProfile();
+
+    await writeJson(paths.profileFile, migrated);
+    return migrated;
   }
+
+  return normalizeProfile({
+    ...profile,
+    accountMode,
+    microsoft: accountMode === 'microsoft' ? microsoft : null
+  });
 }
 
 export async function saveProfile(paths: LauncherPaths, profile: LauncherProfile): Promise<LauncherProfile> {

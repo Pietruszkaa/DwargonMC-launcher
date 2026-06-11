@@ -4,9 +4,36 @@ const http = require('node:http');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const tscBin = path.join(root, 'node_modules', 'typescript', 'bin', 'tsc');
-const electronBin = path.join(root, 'node_modules', 'electron', 'cli.js');
-const viteBin = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
+const repoRoot = path.resolve(root, '..');
+
+function resolvePackageRoot(packageName) {
+  const packageJsonPath = require.resolve(`${packageName}/package.json`, {
+    paths: [root, repoRoot, process.cwd()]
+  });
+
+  return path.dirname(packageJsonPath);
+}
+
+function resolvePackageBin(packageName, binName) {
+  const packageRoot = resolvePackageRoot(packageName);
+  const packageJson = require(path.join(packageRoot, 'package.json'));
+  const bin = packageJson.bin;
+
+  const relativeBin =
+  typeof bin === 'string'
+  ? bin
+  : bin?.[binName];
+
+  if (!relativeBin) {
+    throw new Error(`Package ${packageName} does not expose bin ${binName}.`);
+  }
+
+  return path.join(packageRoot, relativeBin);
+}
+
+const tscBin = resolvePackageBin('typescript', 'tsc');
+const electronBin = resolvePackageBin('electron', 'electron');
+const viteBin = resolvePackageBin('vite', 'vite');
 const mainFile = path.join(root, 'dist-electron', 'main', 'main.js');
 const devServerUrl = 'http://127.0.0.1:5173';
 
