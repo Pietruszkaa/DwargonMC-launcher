@@ -13,7 +13,6 @@ const settings: LauncherSettings = {
   backendUrl: 'https://dwargonmc-sync.petershub.xyz',
   ramMb: 4096,
   closeOnLaunch: false,
-  windowCloseBehavior: 'ask',
   autoConnect: true,
   showLogs: true,
   javaPath: '',
