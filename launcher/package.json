@@ -17,7 +17,7 @@
     "dist:linux": "npm run build && electron-builder --linux dir tar.gz"
   },
   "dependencies": {
-    "axios": "^1.7.9",
+    "axios": "^1.17.0",
     "form-data": "^4.0.5",
     "keytar": "^7.9.0",
     "minecraft-launcher-core": "^3.18.1",
