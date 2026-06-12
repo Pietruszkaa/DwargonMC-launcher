@@ -88,7 +88,6 @@ let healthPollInFlight = false;
 let playSessionStartedAt: number | null = null;
 let playSessionTickTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
-let closeChoicePending = false;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -157,11 +156,6 @@ async function createWindow(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false
     }
-  });
-  mainWindow.on('close', (event) => {
-    if (isQuitting) return;
-    event.preventDefault();
-    void handleMainWindowClose();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void safeOpenExternal(url);
@@ -963,51 +957,6 @@ function activeMinecraftVersion(registry: ServerRegistry): string {
 
 function emitState(): void {
   mainWindow?.webContents.send('launcher:state', state);
-}
-
-async function handleMainWindowClose(): Promise<void> {
-  if (!mainWindow || closeChoicePending) return;
-
-  if (state.settings.windowCloseBehavior === 'tray') {
-    mainWindow.minimize();
-    return;
-  }
-
-  if (state.settings.windowCloseBehavior === 'exit') {
-    isQuitting = true;
-    app.quit();
-    return;
-  }
-
-  closeChoicePending = true;
-  try {
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'question',
-      buttons: ['Minimalizuj launcher', 'Zamknij launcher', 'Anuluj'],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
-      title: 'Zamykanie launchera',
-      message: 'Co zrobić po kliknięciu zamknięcia?',
-      detail: 'Launcher może się zminimalizować albo zamknąć całkowicie. Ten wybór możesz później zmienić w ustawieniach launchera.'
-    });
-
-    if (result.response === 0) {
-      state.settings = await saveSettings(paths, { ...state.settings, windowCloseBehavior: 'tray' });
-      emitState();
-      mainWindow.minimize();
-      return;
-    }
-
-    if (result.response === 1) {
-      state.settings = await saveSettings(paths, { ...state.settings, windowCloseBehavior: 'exit' });
-      emitState();
-      isQuitting = true;
-      app.quit();
-    }
-  } finally {
-    closeChoicePending = false;
-  }
 }
 
 function showMainWindow(): void {

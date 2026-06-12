@@ -31,7 +31,6 @@ export type LauncherSettings = {
   backendUrl: string;
   ramMb: number;
   closeOnLaunch: boolean;
-  windowCloseBehavior: 'ask' | 'tray' | 'exit';
   autoConnect: boolean;
   showLogs: boolean;
   javaPath: string;
