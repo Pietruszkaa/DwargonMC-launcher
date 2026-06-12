@@ -69,7 +69,7 @@ export async function addServer(paths: LauncherPaths, registry: ServerRegistry, 
   const normalizedUrl = normalizeBackendUrl(backendUrl);
   if (!normalizedUrl) throw new Error('Wklej adres backendu serwera.');
 
-  const info = await fetchServerInfo(normalizedUrl);
+  const info = await fetchServerInfoOrFallback(normalizedUrl);
   const now = new Date().toISOString();
   const existing = registry.servers.find((server) => server.id === normalizedUrl);
   const entry: ServerEntry = {
@@ -157,6 +157,23 @@ async function fetchServerInfo(backendUrl: string): Promise<{ name: string | nul
     };
   } catch {
     throw new Error('Backend nie odpowiada albo nie wystawia /server.json.');
+  }
+}
+
+async function fetchServerInfoOrFallback(backendUrl: string): Promise<{ name: string | null; minecraft: ServerMinecraftConfig; authRequired: boolean }> {
+  try {
+    return await fetchServerInfo(backendUrl);
+  } catch {
+    return {
+      name: null,
+      minecraft: {
+        address: null,
+        version: MC_VERSION,
+        loader: 'neoforge',
+        loaderVersion: null
+      },
+      authRequired: false
+    };
   }
 }
 

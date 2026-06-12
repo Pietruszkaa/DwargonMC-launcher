@@ -43,6 +43,7 @@ export function App(): JSX.Element {
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const [accountPromptDismissed, setAccountPromptDismissed] = useState(false);
   const [javaPromptDismissed, setJavaPromptDismissed] = useState(false);
+  const [serverPromptDismissed, setServerPromptDismissed] = useState(false);
   const [timeTick, setTimeTick] = useState(() => Date.now());
   const [mapAvailable, setMapAvailable] = useState(false);
   const [activeSettingsCategory, setActiveSettingsCategory] = useState<SettingsCategory>('launcher');
@@ -210,7 +211,7 @@ export function App(): JSX.Element {
   const isNickValid = /^[A-Za-z0-9_]{3,16}$/.test(nickname);
   const settingsOpen = popup === 'settings';
   const showUpdatePrompt = (state.update.available && !updateDismissed) || manualUpdateOpen;
-  const showServerPrompt = state.setup.complete && !activeServer;
+  const showServerPrompt = state.setup.complete && !activeServer && !serverPromptDismissed;
   const showAccountPrompt = !showServerPrompt && !accountPromptDismissed && state.profile.accountMode === 'offline' && !state.profile.nickname;
   const showJavaPrompt =
     !javaPromptDismissed &&
@@ -433,7 +434,7 @@ export function App(): JSX.Element {
           onClose={() => setSyncPromptDismissed(syncPromptKey)}
         />
       )}
-      {showServerPrompt && <ServerSetupModal />}
+      {showServerPrompt && <ServerSetupModal onLater={() => setServerPromptDismissed(true)} />}
       {showAccountPrompt && (
         <AccountChoiceModal onClose={() => setAccountPromptDismissed(true)} />
       )}
@@ -642,10 +643,10 @@ function AccountChoiceModal({ onClose }: { onClose: () => void }): JSX.Element {
   );
 }
 
-function ServerSetupModal(): JSX.Element {
+function ServerSetupModal({ onLater }: { onLater: () => void }): JSX.Element {
   const [backendUrl, setBackendUrl] = useState('');
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('Wklej adres backendu serwera, np. https://sync.example.com');
+  const [message, setMessage] = useState('Wklej adres backendu serwera, np. https://sync.example.com. Jeśli backend jest teraz offline, launcher zapisze wpis lokalnie.');
 
   const add = async (): Promise<void> => {
     setBusy(true);
@@ -666,8 +667,11 @@ function ServerSetupModal(): JSX.Element {
         <input value={backendUrl} onChange={(event) => setBackendUrl(event.target.value)} placeholder="https://sync.example.com" />
       </div>
       <footer className="modal-actions">
+        <button className="secondary-button compact" type="button" onClick={onLater}>
+          Później
+        </button>
         <button className="play-button compact" type="button" onClick={add} disabled={busy || !backendUrl.trim()}>
-          {busy ? 'Sprawdzanie...' : 'Dodaj serwer'}
+          {busy ? 'Zapisywanie...' : 'Dodaj serwer'}
         </button>
       </footer>
     </Modal>

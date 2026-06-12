@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { activeServer, instanceIdForBackend, readServerRegistry, saveServerRegistry } from '../../electron/main/servers';
+import { describe, expect, it, vi } from 'vitest';
+import { MC_VERSION } from '../../electron/main/constants';
+import { activeServer, addServer, instanceIdForBackend, readServerRegistry, saveServerRegistry } from '../../electron/main/servers';
 import type { LauncherPaths } from '../../electron/main/paths';
 
 describe('server registry', () => {
@@ -45,6 +46,29 @@ describe('server registry', () => {
         loaderVersion: null
       }
     });
+  });
+
+  it('adds a server even when backend metadata is unavailable', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dwargon-servers-offline-'));
+    const paths = makePaths(root);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+
+    const registry = await addServer(paths, await readServerRegistry(paths), 'https://sync.example.com');
+
+    expect(activeServer(registry)).toMatchObject({
+      id: 'https://sync.example.com',
+      backendUrl: 'https://sync.example.com',
+      name: 'sync.example.com',
+      authRequired: false,
+      minecraft: {
+        address: null,
+        version: MC_VERSION,
+        loader: 'neoforge',
+        loaderVersion: null
+      }
+    });
+
+    fetchSpy.mockRestore();
   });
 });
 
