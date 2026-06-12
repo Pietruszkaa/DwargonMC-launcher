@@ -189,6 +189,10 @@ export function App(): JSX.Element {
     await api.switchServer(serverId);
   }, []);
 
+  const removeServer = useCallback(async (serverId: string) => {
+    await api.removeServer(serverId);
+  }, []);
+
   const handleWindowAction = useCallback((action: 'minimize' | 'maximize' | 'close') => {
     void api.windowAction(action);
   }, []);
@@ -853,6 +857,16 @@ function SettingsWorkspace({
     }
   };
 
+  const removeServer = async (serverId: string): Promise<void> => {
+    setServerMessage('Usuwanie serwera...');
+    try {
+      await api.removeServer(serverId);
+      setServerMessage('Serwer usunięty.');
+    } catch (error) {
+      setServerMessage(error instanceof Error ? error.message : 'Nie udało się usunąć serwera.');
+    }
+  };
+
   const saveMcOptions = async (): Promise<void> => {
     if (state.launch.running) {
       setMcMessage('Zamknij Minecraft przed zapisem. Gra zapisuje options.txt przy wyjściu i może nadpisać zmiany.');
@@ -935,21 +949,36 @@ function SettingsWorkspace({
             <div className="server-list">
               {state.servers.servers.length > 0 ? (
                 state.servers.servers.map((server) => (
-                  <button
-                    className={server.id === state.servers.activeServerId ? 'active' : ''}
-                    type="button"
-                    key={server.id}
-                    onClick={() => void switchServer(server.id)}
-                    disabled={server.id === state.servers.activeServerId || state.launch.running}
-                  >
-                    <strong>{server.name}</strong>
-                    <small>{server.backendUrl}</small>
-                    <small>
-                      MC: {server.minecraft.version} / {server.minecraft.loader}
-                      {server.minecraft.loaderVersion ? ` ${server.minecraft.loaderVersion}` : ''}
-                      {server.minecraft.address ? ` / ${server.minecraft.address}` : ''}
-                    </small>
-                  </button>
+                  <div className="server-list-entry" key={server.id}>
+                    <button
+                      className={server.id === state.servers.activeServerId ? 'active' : ''}
+                      type="button"
+                      onClick={() => void switchServer(server.id)}
+                      disabled={server.id === state.servers.activeServerId || state.launch.running}
+                    >
+                      <strong>{server.name}</strong>
+                      <small>{server.backendUrl}</small>
+                      <small>
+                        MC: {server.minecraft.version} / {server.minecraft.loader}
+                        {server.minecraft.loaderVersion ? ` ${server.minecraft.loaderVersion}` : ''}
+                        {server.minecraft.address ? ` / ${server.minecraft.address}` : ''}
+                      </small>
+                    </button>
+                    <button
+                      className="server-delete-btn"
+                      type="button"
+                      onClick={() => {
+                        if (state.launch.running) return;
+                        if (!window.confirm(`Usunąć backend ${server.name}?`)) return;
+                        void removeServer(server.id);
+                      }}
+                      disabled={state.launch.running}
+                      title="Usuń backend"
+                      aria-label={`Usuń backend ${server.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
                 ))
               ) : (
                 <small>Brak dodanych serwerów.</small>

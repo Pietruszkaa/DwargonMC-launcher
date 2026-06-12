@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { MC_VERSION } from '../../electron/main/constants';
-import { activeServer, addServer, instanceIdForBackend, readServerRegistry, saveServerRegistry } from '../../electron/main/servers';
+import { activeServer, addServer, instanceIdForBackend, readServerRegistry, removeServer, saveServerRegistry } from '../../electron/main/servers';
 import type { LauncherPaths } from '../../electron/main/paths';
 
 describe('server registry', () => {
@@ -69,6 +69,55 @@ describe('server registry', () => {
     });
 
     fetchSpy.mockRestore();
+  });
+
+  it('removes the active server and keeps the next one selected', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dwargon-servers-remove-'));
+    const paths = makePaths(root);
+    const first = 'https://first.example.com';
+    const second = 'https://second.example.com';
+
+    await saveServerRegistry(paths, {
+      activeServerId: first,
+      servers: [
+        {
+          id: first,
+          instanceId: instanceIdForBackend(first),
+          name: 'First',
+          backendUrl: first,
+          minecraft: {
+            address: null,
+            version: MC_VERSION,
+            loader: 'neoforge',
+            loaderVersion: null
+          },
+          authRequired: false,
+          addedAt: '2026-06-06T00:00:00.000Z',
+          lastUsedAt: '2026-06-06T00:00:00.000Z'
+        },
+        {
+          id: second,
+          instanceId: instanceIdForBackend(second),
+          name: 'Second',
+          backendUrl: second,
+          minecraft: {
+            address: null,
+            version: MC_VERSION,
+            loader: 'neoforge',
+            loaderVersion: null
+          },
+          authRequired: false,
+          addedAt: '2026-06-06T00:00:00.000Z',
+          lastUsedAt: '2026-06-06T00:00:00.000Z'
+        }
+      ]
+    });
+
+    const registry = await removeServer(paths, await readServerRegistry(paths), first);
+
+    expect(activeServer(registry)?.id).toBe(second);
+    expect(registry.servers).toHaveLength(1);
+    expect(registry.servers[0]?.id).toBe(second);
   });
 });
 

@@ -89,6 +89,16 @@ export async function addServer(paths: LauncherPaths, registry: ServerRegistry, 
   });
 }
 
+export async function removeServer(paths: LauncherPaths, registry: ServerRegistry, serverId: string): Promise<ServerRegistry> {
+  const remaining = registry.servers.filter((server) => server.id !== serverId);
+  const activeServerId = registry.activeServerId === serverId ? remaining[0]?.id ?? null : registry.activeServerId;
+
+  return saveServerRegistry(paths, {
+    activeServerId,
+    servers: remaining
+  });
+}
+
 export async function refreshServerName(
   paths: LauncherPaths,
   registry: ServerRegistry,

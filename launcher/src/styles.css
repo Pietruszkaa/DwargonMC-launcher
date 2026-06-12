@@ -130,7 +130,9 @@ button:disabled {
   width: 24px;
   height: 24px;
   transform: translateY(-50%);
+  z-index: 2;
   object-fit: contain;
+  display: block;
   pointer-events: none;
   user-select: none;
 }
@@ -173,8 +175,8 @@ button:disabled {
 .status-left {
   -webkit-app-region: no-drag;
   position: absolute;
-  left: calc(var(--sidebar-width) / 2);
-  width: min(calc(var(--sidebar-width) + 180px), 52vw);
+  left: 50%;
+  width: min(620px, calc(100% - 260px));
   transform: translateX(-50%);
   justify-content: center;
   min-width: 0;
@@ -183,7 +185,7 @@ button:disabled {
 }
 
 .shell-with-server-rail .status-left {
-  left: calc(var(--server-rail-width) + 18px + (var(--sidebar-width) / 2));
+  width: min(720px, calc(100% - 320px));
 }
 
 .server-state {
@@ -1344,6 +1346,13 @@ button:disabled {
   overflow: auto;
 }
 
+.server-list-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 8px;
+  align-items: stretch;
+}
+
 .server-list button {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1353,6 +1362,21 @@ button:disabled {
   border-radius: var(--radius-sm);
   padding: 10px;
   text-align: left;
+}
+
+.server-delete-btn {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 82, 82, 0.08);
+  color: var(--warn);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.server-delete-btn:hover {
+  border-color: rgba(255, 82, 82, 0.4);
+  background: rgba(255, 82, 82, 0.18);
+  color: #ffd6d6;
 }
 
 .server-list button.active {

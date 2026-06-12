@@ -13,7 +13,7 @@ import { loginMicrosoft, refreshMicrosoft, type MclcAuthorization } from './micr
 import { checkModrinthAddonUpdates, identifyInstalledModrinthProjects, installModrinthProject, readSearchCache, searchModrinth, type ModrinthInstallRequest, type ModrinthSearchRequest } from './modrinth';
 import { buildLauncherPaths, ensureLauncherDirs, getLauncherPaths, type LauncherPaths } from './paths';
 import { getRamInfo } from './ram';
-import { activateServer, activeServer, addServer, readServerRegistry, refreshServerName, type ServerMinecraftConfig, type ServerRegistry } from './servers';
+import { activateServer, activeServer, addServer, readServerRegistry, refreshServerName, removeServer, type ServerMinecraftConfig, type ServerRegistry } from './servers';
 import { resolveSetupPaths, type SetupState } from './setup';
 import { checkSyncPlan, listManagedLocalFiles, listPlayerAddonFiles, removePlayerAddonFile, runSync, type ManagedFile, type PlayerAddonFile, type PlayerAddonKind, type SyncStatus } from './sync';
 import {
@@ -202,6 +202,29 @@ function registerIpc(): void {
     const server = activeServer(registry);
     if (!server) return state;
     await switchToServer(registry, server.instanceId);
+    return state;
+  });
+
+  ipcMain.handle('launcher:remove-server', async (_event, serverId: string) => {
+    const registry = await removeServer(basePaths, state.servers, serverId);
+    const server = activeServer(registry);
+
+    if (server) {
+      await switchToServer(registry, server.instanceId);
+      return state;
+    }
+
+    const runtime = await reinitializeLauncherRuntime(basePaths, registry);
+    applyRuntimeSnapshot(runtime);
+    state.system.java = await checkJava(state.settings.javaPath, activeMinecraftVersion(state.servers));
+    state.system.javaInstaller = idleJavaInstallerStatus(state.system.java.requiredMajor);
+    state.sync = idleSync();
+    state.session = {
+      activeStartedAt: null,
+      tickAt: new Date().toISOString()
+    };
+    emitState();
+    void performStartupSync();
     return state;
   });
 

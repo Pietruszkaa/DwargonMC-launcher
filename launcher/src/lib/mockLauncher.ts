@@ -216,6 +216,18 @@ export function getLauncherApi(): LauncherApi {
       emitState();
       return state;
     },
+    async removeServer(serverId) {
+      const remaining = state.servers.servers.filter((entry) => entry.id !== serverId);
+      state = {
+        ...state,
+        servers: {
+          activeServerId: state.servers.activeServerId === serverId ? remaining[0]?.id ?? null : state.servers.activeServerId,
+          servers: remaining
+        }
+      };
+      emitState();
+      return state;
+    },
     async switchServer(serverId) {
       const server = state.servers.servers.find((entry) => entry.id === serverId);
       if (!server) throw new Error('Nie znaleziono serwera.');
