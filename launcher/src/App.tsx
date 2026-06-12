@@ -30,7 +30,7 @@ type McOptionCategory = {
 
 const api = getLauncherApi();
 const MODRINTH_PAGE_SIZE = 20;
-const launcherIconUrl = new URL('../assets/icon.ico', import.meta.url).href;
+const launcherIconUrl = new URL('../assets/logo.png', import.meta.url).href;
 
 export function App(): JSX.Element {
   const [state, setState] = useState<LauncherState | null>(null);

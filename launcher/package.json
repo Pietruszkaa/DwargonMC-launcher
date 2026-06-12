@@ -60,6 +60,7 @@
       ]
     },
     "linux": {
+      "icon": "assets/logo.png",
       "category": "Game",
       "artifactName": "${productName}-${version}-linux.${ext}",
       "target": [
