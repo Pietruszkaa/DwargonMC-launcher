@@ -329,6 +329,7 @@ export type MinecraftOptionsState = {
 export type LauncherApi = {
   getState(): Promise<LauncherState>;
   addServer(backendUrl: string): Promise<LauncherState>;
+  removeServer(serverId: string): Promise<LauncherState>;
   switchServer(serverId: string): Promise<LauncherState>;
   saveSettings(settings: LauncherSettings): Promise<LauncherSettings>;
   saveProfile(profile: LauncherProfile): Promise<LauncherProfile>;

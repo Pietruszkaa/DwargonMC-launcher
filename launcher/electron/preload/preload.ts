@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 const api = {
   getState: () => ipcRenderer.invoke('launcher:get-state'),
   addServer: (backendUrl: unknown) => ipcRenderer.invoke('launcher:add-server', backendUrl),
+  removeServer: (serverId: unknown) => ipcRenderer.invoke('launcher:remove-server', serverId),
   switchServer: (serverId: unknown) => ipcRenderer.invoke('launcher:switch-server', serverId),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('launcher:save-settings', settings),
   saveProfile: (profile: unknown) => ipcRenderer.invoke('launcher:save-profile', profile),

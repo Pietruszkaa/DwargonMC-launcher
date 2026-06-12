@@ -69,7 +69,7 @@ export async function addServer(paths: LauncherPaths, registry: ServerRegistry, 
   const normalizedUrl = normalizeBackendUrl(backendUrl);
   if (!normalizedUrl) throw new Error('Wklej adres backendu serwera.');
 
-  const info = await fetchServerInfo(normalizedUrl);
+  const info = await fetchServerInfoOrFallback(normalizedUrl);
   const now = new Date().toISOString();
   const existing = registry.servers.find((server) => server.id === normalizedUrl);
   const entry: ServerEntry = {
@@ -86,6 +86,16 @@ export async function addServer(paths: LauncherPaths, registry: ServerRegistry, 
   return saveServerRegistry(paths, {
     activeServerId: entry.id,
     servers: [...registry.servers.filter((server) => server.id !== entry.id), entry]
+  });
+}
+
+export async function removeServer(paths: LauncherPaths, registry: ServerRegistry, serverId: string): Promise<ServerRegistry> {
+  const remaining = registry.servers.filter((server) => server.id !== serverId);
+  const activeServerId = registry.activeServerId === serverId ? remaining[0]?.id ?? null : registry.activeServerId;
+
+  return saveServerRegistry(paths, {
+    activeServerId,
+    servers: remaining
   });
 }
 
@@ -157,6 +167,23 @@ async function fetchServerInfo(backendUrl: string): Promise<{ name: string | nul
     };
   } catch {
     throw new Error('Backend nie odpowiada albo nie wystawia /server.json.');
+  }
+}
+
+async function fetchServerInfoOrFallback(backendUrl: string): Promise<{ name: string | null; minecraft: ServerMinecraftConfig; authRequired: boolean }> {
+  try {
+    return await fetchServerInfo(backendUrl);
+  } catch {
+    return {
+      name: null,
+      minecraft: {
+        address: null,
+        version: MC_VERSION,
+        loader: 'neoforge',
+        loaderVersion: null
+      },
+      authRequired: false
+    };
   }
 }
 
